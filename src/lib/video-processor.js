@@ -2,19 +2,19 @@
  * Video processing pipeline — dedicated Gemini & Veo watermark removal engine.
  *
  * Highlights:
- * 1. Exact Reverse Alpha-Blending: Mathematically inverts the watermark compositing
- *    equation (orig = (watermarked - alpha * 255) / (1 - alpha)) preserving sharp
- *    background edges, textures, and gradients without blur or smearing.
- * 2. High Speed: Hardware-accelerated requestVideoFrameCallback pipeline with zero
- *    per-frame allocations (<0.05ms/frame inpainting) and instant zero-seek startup.
- * 3. High Bitrate: Up to 30-60 Mbps bitrate matching source resolution to guarantee
- *    zero compression degradation.
- * 4. Dual-Star Support: Seamlessly handles both standard single-star (Gemini) and
- *    dual-star (Veo) watermarks.
- * 5. Audio Preservation: High-fidelity synchronized audio routing via Web Audio API.
+ * 1. Gaussian Anti-Aliased Alpha Modeling: Eliminates hard-cliff boundary edges,
+ *    dark outline trenches, and center cross creases.
+ * 2. Bilinear Boundary Interpolation: Seamlessly samples patch perimeter for
+ *    zero-artifact reconstruction on smooth/gradient backgrounds.
+ * 3. Exact Reverse Alpha-Blending with Consistency Guard: Mathematically restores
+ *    underlying colors and sharp edges while suppressing over-subtraction halos.
+ * 4. Reliable Detection: Multi-sample seek on decoded frames (never runs on blank t=0)
+ *    with calibrated fallback coordinates.
+ * 5. High Bitrate & Hardware Acceleration: GPU presentation loop with full resolution
+ *    and audio preservation.
  */
 
-import { getDefaultLogoSize } from './alpha-maps.js';
+import { getDefaultLogoSize, getDefaultPosition } from './alpha-maps.js';
 import { detectWatermark } from './detection.js';
 
 export function getSupportedMimeType() {
@@ -38,11 +38,10 @@ export function getSupportedMimeType() {
 export function getDefaultVideoWatermarkPosition(width, height, logoSize, isDualStar = false) {
   const boxW = isDualStar ? Math.round(logoSize * 1.65) : logoSize;
   const boxH = isDualStar ? Math.round(logoSize * 1.25) : logoSize;
-  const marginX = Math.max(12, Math.floor(width * 0.02));
-  const marginY = Math.max(12, Math.floor(height * 0.025));
+  const def = getDefaultPosition(width, height, logoSize);
   return {
-    x: Math.max(0, width - boxW - marginX),
-    y: Math.max(0, height - boxH - marginY),
+    x: Math.max(0, Math.min(width - boxW, def.x)),
+    y: Math.max(0, Math.min(height - boxH, def.y)),
     logoSize,
     boxW,
     boxH,
@@ -56,39 +55,52 @@ function smoothstep(edge0, edge1, x) {
 }
 
 /**
- * 4-point star astroid curve alpha calculation.
- * (x/a)^(2/3) + (y/b)^(2/3) <= 1
+ * Separable 2D Gaussian blur for anti-aliasing procedural watermark masks.
  */
-function fourPointStarAlpha(dx, dy, radius, maxAlpha = 0.84) {
-  if (radius <= 0) return 0;
-  const p = 0.68;
-  const d = Math.pow(dx / radius, p) + Math.pow(dy / radius, p);
-  if (d > 1.0) return 0;
-  const falloff = Math.pow(1.0 - Math.min(1.0, d), 0.4);
-  return Math.min(0.85, Math.max(0, falloff * maxAlpha));
-}
+function gaussianBlur2D(src, w, h, radius = 2) {
+  const dst = new Float32Array(w * h);
+  const temp = new Float32Array(w * h);
+  const kernel = [];
+  let sum = 0;
+  for (let i = -radius; i <= radius; i++) {
+    const wt = Math.exp(-(i * i) / (2 * (radius * 0.55) * (radius * 0.55)));
+    kernel.push(wt);
+    sum += wt;
+  }
+  for (let i = 0; i < kernel.length; i++) kernel[i] /= sum;
 
-/**
- * Evaluates the watermark alpha and feather values at (x, y) relative to patch.
- */
-export function geminiDualStarAlpha(x, y, cx1, cy1, r1, cx2, cy2, r2 = 0) {
-  const dx1 = Math.abs(x - cx1);
-  const dy1 = Math.abs(y - cy1);
-  const a1 = fourPointStarAlpha(dx1, dy1, r1, 0.84);
-
-  let a2 = 0;
-  if (r2 > 0) {
-    const dx2 = Math.abs(x - cx2);
-    const dy2 = Math.abs(y - cy2);
-    a2 = fourPointStarAlpha(dx2, dy2, r2, 0.76);
+  // Horizontal pass
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      let val = 0;
+      for (let k = -radius; k <= radius; k++) {
+        const sx = Math.min(w - 1, Math.max(0, x + k));
+        val += src[row + sx] * kernel[k + radius];
+      }
+      temp[row + x] = val;
+    }
   }
 
-  return Math.max(a1, a2);
+  // Vertical pass
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let val = 0;
+      for (let k = -radius; k <= radius; k++) {
+        const sy = Math.min(h - 1, Math.max(0, y + k));
+        val += temp[sy * w + x] * kernel[k + radius];
+      }
+      dst[y * w + x] = val;
+    }
+  }
+
+  return dst;
 }
 
 /**
  * Builds high-performance, zero-allocation LUT engine for video frames.
- * Uses exact reverse alpha-blending with boundary inpaint fallback for clipping/cores.
+ * Uses Gaussian anti-aliased astroid mask with Bilinear Boundary Inpainting
+ * and Exact Reverse Alpha-Blending.
  */
 export function createVideoWatermarkEngine(patchW, patchH, relX, relY, logoSize, isDualStar = false, mode = 'reverse-blend') {
   const cx1 = relX + logoSize * 0.50;
@@ -101,94 +113,98 @@ export function createVideoWatermarkEngine(patchW, patchH, relX, relY, logoSize,
 
   const isPureInpaint = mode === 'inpaint';
 
-  // 1. Generate mask over patch
-  const mask = new Float32Array(patchW * patchH);
-  let activeCount = 0;
+  // 1. Generate raw astroid shape
+  const rawMask = new Float32Array(patchW * patchH);
 
   for (let y = 0; y < patchH; y++) {
-    const rowOffset = y * patchW;
+    const row = y * patchW;
     for (let x = 0; x < patchW; x++) {
-      const alpha = geminiDualStarAlpha(x, y, cx1, cy1, r1, cx2, cy2, r2);
-      mask[rowOffset + x] = alpha;
-      if (alpha > 0.005) {
-        activeCount++;
+      // Primary Star
+      const dx1 = Math.abs(x - cx1);
+      const dy1 = Math.abs(y - cy1);
+      const d1 = Math.pow(dx1 / r1, 0.68) + Math.pow(dy1 / r1, 0.68);
+      let a1 = 0;
+      if (d1 <= 1.0) {
+        a1 = Math.pow(1.0 - d1, 0.4) * 0.84;
       }
+
+      // Secondary Star (Veo)
+      let a2 = 0;
+      if (r2 > 0) {
+        const dx2 = Math.abs(x - cx2);
+        const dy2 = Math.abs(y - cy2);
+        const d2 = Math.pow(dx2 / r2, 0.68) + Math.pow(dy2 / r2, 0.68);
+        if (d2 <= 1.0) {
+          a2 = Math.pow(1.0 - d2, 0.4) * 0.76;
+        }
+      }
+
+      rawMask[row + x] = Math.max(a1, a2);
     }
   }
 
-  // 2. Precompute zero-allocation arrays for all active pixels
-  const lutPixel = new Int32Array(activeCount);
-  const lutAlpha255 = new Float32Array(activeCount);
-  const lutInvOneMinusA = new Float32Array(activeCount);
-  const lutInpaintWeight = new Float32Array(activeCount);
-  const lutFeather = new Float32Array(activeCount);
+  // 2. Gaussian anti-aliasing filter
+  // Kills the 34-level edge cliff (eliminates dark outline) and center cusp crease (eliminates cross)
+  const mask = gaussianBlur2D(rawMask, patchW, patchH, 2);
 
-  // Boundary references for fallback
+  // 3. Precompute LUT arrays for all active pixels
+  let activeCount = 0;
+  for (let i = 0; i < mask.length; i++) {
+    if (mask[i] > 0.008) activeCount++;
+  }
+
+  const lutPixel = new Int32Array(activeCount);
   const lutTop = new Int32Array(activeCount);
   const lutBtm = new Int32Array(activeCount);
   const lutLft = new Int32Array(activeCount);
   const lutRgt = new Int32Array(activeCount);
+
   const lutWt = new Float32Array(activeCount);
   const lutWb = new Float32Array(activeCount);
   const lutWl = new Float32Array(activeCount);
   const lutWr = new Float32Array(activeCount);
 
+  const lutAlpha255 = new Float32Array(activeCount);
+  const lutInvOneMinusA = new Float32Array(activeCount);
+  const lutInpaintWeight = new Float32Array(activeCount);
+  const lutFeather = new Float32Array(activeCount);
+
   let idx = 0;
   for (let y = 0; y < patchH; y++) {
+    const vPct = (y + 0.5) / patchH;
     for (let x = 0; x < patchW; x++) {
       const alpha = mask[y * patchW + x];
-      if (alpha <= 0.005) continue;
+      if (alpha <= 0.008) continue;
 
-      // Distance to nearest star center for radial feathering
-      const dist1 = Math.sqrt((x - cx1) * (x - cx1) + (y - cy1) * (y - cy1)) / r1;
-      const dist2 = isDualStar ? Math.sqrt((x - cx2) * (x - cx2) + (y - cy2) * (y - cy2)) / r2 : Infinity;
-      const minNormDist = Math.min(dist1, dist2);
+      const hPct = (x + 0.5) / patchW;
 
-      // Feather at outer edge of astroid
-      const feather = 1.0 - smoothstep(0.85, 1.02, minNormDist);
-      if (feather <= 0.001) continue;
+      // Bilinear boundary interpolation weights
+      const wt = 0.5 * (1.0 - vPct);
+      const wb = 0.5 * vPct;
+      const wl = 0.5 * (1.0 - hPct);
+      const wr = 0.5 * hPct;
 
-      // Inpaint fallback weight — reverse blend dominates everywhere except dense core
-      const inpaintW = isPureInpaint ? 1.0 : smoothstep(0.20, 0.72, alpha);
+      // Inpaint fallback weight: reverse blend dominates below 0.55, transitions to inpaint at core
+      const inpaintW = isPureInpaint ? 1.0 : smoothstep(0.20, 0.65, alpha);
 
-      // Find clean boundary pixels in 4 directions
-      let yt = y;
-      while (yt > 0 && mask[yt * patchW + x] > 0.005) yt--;
-      const dt = Math.max(1, y - yt);
-
-      let yb = y;
-      while (yb < patchH - 1 && mask[yb * patchW + x] > 0.005) yb++;
-      const db = Math.max(1, yb - y);
-
-      let xl = x;
-      while (xl > 0 && mask[y * patchW + xl] > 0.005) xl--;
-      const dl = Math.max(1, x - xl);
-
-      let xr = x;
-      while (xr < patchW - 1 && mask[y * patchW + xr] > 0.005) xr++;
-      const dr = Math.max(1, xr - x);
-
-      const wt = 1.0 / Math.pow(dt, 1.2);
-      const wb = 1.0 / Math.pow(db, 1.2);
-      const wl = 1.0 / Math.pow(dl, 1.2);
-      const wr = 1.0 / Math.pow(dr, 1.2);
-      const invSum = 1.0 / (wt + wb + wl + wr);
+      // Smooth Hermite feathering at outer perimeter
+      const feather = smoothstep(0.008, 0.06, alpha);
 
       lutPixel[idx] = (y * patchW + x) * 4;
+      lutTop[idx] = (0 * patchW + x) * 4;
+      lutBtm[idx] = ((patchH - 1) * patchW + x) * 4;
+      lutLft[idx] = (y * patchW + 0) * 4;
+      lutRgt[idx] = (y * patchW + (patchW - 1)) * 4;
+
+      lutWt[idx] = wt;
+      lutWb[idx] = wb;
+      lutWl[idx] = wl;
+      lutWr[idx] = wr;
+
       lutAlpha255[idx] = alpha * 255.0;
-      lutInvOneMinusA[idx] = 1.0 / Math.max(0.04, 1.0 - alpha);
+      lutInvOneMinusA[idx] = 1.0 / Math.max(0.05, 1.0 - alpha);
       lutInpaintWeight[idx] = inpaintW;
       lutFeather[idx] = feather;
-
-      lutTop[idx] = (yt * patchW + x) * 4;
-      lutBtm[idx] = (yb * patchW + x) * 4;
-      lutLft[idx] = (y * patchW + xl) * 4;
-      lutRgt[idx] = (y * patchW + xr) * 4;
-
-      lutWt[idx] = wt * invSum;
-      lutWb[idx] = wb * invSum;
-      lutWl[idx] = wl * invSum;
-      lutWr[idx] = wr * invSum;
 
       idx++;
     }
@@ -213,7 +229,7 @@ export function createVideoWatermarkEngine(patchW, patchH, relX, relY, logoSize,
       const gW = data[p + 1];
       const bW = data[p + 2];
 
-      // 1. Boundary inpaint value (used for core or fallback)
+      // 1. Bilinear boundary interpolation (smooth background reference)
       const t = lutTop[i];
       const b = lutBtm[i];
       const l = lutLft[i];
@@ -235,28 +251,22 @@ export function createVideoWatermarkEngine(patchW, patchH, relX, relY, logoSize,
         finalG = gInp;
         finalB = bInp;
       } else {
-        // 2. Exact mathematical inverse of alpha-blending:
-        // C_orig = (C_watermarked - alpha * 255) / (1 - alpha)
+        // 2. Exact reverse alpha-blend
         const rOrig = (rW - a255) * invOneMinusA;
         const gOrig = (gW - a255) * invOneMinusA;
         const bOrig = (bW - a255) * invOneMinusA;
 
+        // 3. Artifact / outline suppression:
+        // If reverse blend causes clipping or deviates significantly from smooth local
+        // background, it is an over-subtraction artifact. Fall back to smooth inpaint.
         let needsFallback = (
           rOrig < 0 || rOrig > 255 ||
           gOrig < 0 || gOrig > 255 ||
-          bOrig < 0 || bOrig > 255
+          bOrig < 0 || bOrig > 255 ||
+          Math.abs(rOrig - rInp) > 28 ||
+          Math.abs(gOrig - gInp) > 28 ||
+          Math.abs(bOrig - bInp) > 28
         );
-
-        if (!needsFallback) {
-          // Chromatic shift protection against compression halos
-          const origRG = rOrig - gOrig;
-          const origGB = gOrig - bOrig;
-          const inpRG = rInp - gInp;
-          const inpGB = gInp - bInp;
-          if (Math.abs(origRG - inpRG) > 28 || Math.abs(origGB - inpGB) > 28) {
-            needsFallback = true;
-          }
-        }
 
         if (needsFallback) {
           finalR = rInp;
@@ -295,6 +305,24 @@ function getTargetBitrate(width, height) {
 }
 
 /**
+ * Safely seek video and wait for frame presentation.
+ */
+function seekToTime(videoEl, targetTime) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      videoEl.removeEventListener('seeked', finish);
+      resolve();
+    };
+    videoEl.addEventListener('seeked', finish);
+    setTimeout(finish, 400); // Safety fallback
+    videoEl.currentTime = Math.max(0, targetTime);
+  });
+}
+
+/**
  * Process a video file with hardware-accelerated frame playback.
  */
 export async function processVideo(file, onProgress, onComplete, onError, signal, options = {}) {
@@ -326,10 +354,10 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
     url = URL.createObjectURL(file);
     videoEl.src = url;
 
-    // Load metadata
+    // Wait for metadata and frame decoding to be ready
     await new Promise((resolve, reject) => {
       videoEl.onloadedmetadata = () => resolve();
-      videoEl.onerror = () => reject(new Error('Failed to load video file metadata.'));
+      videoEl.onerror = () => reject(new Error('Failed to load video metadata.'));
     });
 
     let duration = videoEl.duration;
@@ -348,7 +376,8 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
-    // Fast watermark detection
+    // Reliable watermark detection:
+    // Sample a decoded frame where content is guaranteed to be visible (not initial black fade)
     let detection = null;
     const defaultPos = getDefaultVideoWatermarkPosition(
       width,
@@ -366,24 +395,21 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
         isDualStar: options.isDualStar !== undefined ? !!options.isDualStar : false,
       };
     } else {
-      // Check frame 0 directly
+      // Seek to sample time (t = 0.5s or 25% duration) so real decoded pixels are drawn
+      const sample1 = Math.min(0.8, duration > 1 ? duration * 0.25 : 0.1);
+      await seekToTime(videoEl, sample1);
       ctx.drawImage(videoEl, 0, 0);
-      const sData = ctx.getImageData(0, 0, width, height);
+      let sData = ctx.getImageData(0, 0, width, height);
       let d = detectWatermark(sData, width, height, options);
 
-      // If initial frame was black / fade-in, do one seek to sample 0.5s
-      if (d.confidence < 0.40 && duration > 0.6) {
-        await new Promise((resolve) => {
-          const onSeeked = () => {
-            videoEl.removeEventListener('seeked', onSeeked);
-            resolve();
-          };
-          videoEl.addEventListener('seeked', onSeeked);
-          videoEl.currentTime = Math.min(1.0, duration * 0.2);
-        });
+      // If confidence is low, try second sample at mid-point
+      if (d.confidence < 0.38 && duration > 1.2) {
+        const sample2 = Math.min(2.0, duration * 0.5);
+        await seekToTime(videoEl, sample2);
         ctx.drawImage(videoEl, 0, 0);
-        const sData2 = ctx.getImageData(0, 0, width, height);
-        d = detectWatermark(sData2, width, height, options);
+        sData = ctx.getImageData(0, 0, width, height);
+        const d2 = detectWatermark(sData, width, height, options);
+        if (d2.confidence > d.confidence) d = d2;
       }
 
       detection = d.confidence >= 0.35 ? d : { ...defaultPos, confidence: 0 };
@@ -417,24 +443,24 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
     }
     detection.isDualStar = isDualStar;
 
-    // Boundary padding for clean inpaint sampling
-    const pad = 16;
+    // Pad region by 14px to capture true surrounding background for clean boundary inpainting
+    const pad = 14;
     const patchX = Math.max(0, Math.floor(watermarkX - pad));
     const patchY = Math.max(0, Math.floor(watermarkY - pad));
     const patchW = isDualStar
-      ? Math.min(width - patchX, Math.ceil(logoSize * 1.70 + pad * 2))
+      ? Math.min(width - patchX, Math.ceil(logoSize * 1.68 + pad * 2))
       : Math.min(width - patchX, Math.ceil(logoSize + pad * 2));
     const patchH = isDualStar
-      ? Math.min(height - patchY, Math.ceil(logoSize * 1.35 + pad * 2))
+      ? Math.min(height - patchY, Math.ceil(logoSize * 1.30 + pad * 2))
       : Math.min(height - patchY, Math.ceil(logoSize + pad * 2));
     const relX = watermarkX - patchX;
     const relY = watermarkY - patchY;
 
-    // Build the high-performance reverse alpha-blend engine
+    // Build the high-performance anti-aliased engine
     const engineMode = options.mode || 'reverse-blend';
     const engine = createVideoWatermarkEngine(patchW, patchH, relX, relY, logoSize, isDualStar, engineMode);
 
-    // Audio capture via AudioContext for lossless sound
+    // Audio capture via AudioContext
     let audioTrack = null;
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -446,9 +472,7 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
         const tracks = dest.stream.getAudioTracks();
         if (tracks && tracks.length > 0) audioTrack = tracks[0];
       }
-    } catch {
-      // Fallback
-    }
+    } catch {}
 
     if (!audioTrack) {
       try {
@@ -460,11 +484,10 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
       } catch {}
     }
 
-    // High bitrate configuration — matches source resolution
+    // High bitrate configuration
     const targetBitrate = getTargetBitrate(width, height);
     const mimeType = getSupportedMimeType();
 
-    // Stream capture up to 60fps to prevent judder
     const stream = canvas.captureStream(60);
     if (audioTrack) {
       stream.addTrack(audioTrack);
@@ -556,7 +579,7 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
       // Draw full decoded frame to canvas
       ctx.drawImage(videoEl, 0, 0);
 
-      // In-place reverse alpha-blend on watermark patch ONLY
+      // In-place clean removal on watermark patch ONLY
       const patchData = ctx.getImageData(patchX, patchY, patchW, patchH);
       engine.processPatch(patchData);
       ctx.putImageData(patchData, patchX, patchY);
@@ -577,14 +600,8 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
       }
     };
 
-    // Fast seek to 0 before starting playback
-    if (videoEl.currentTime > 0.05) {
-      await new Promise((r) => {
-        const onS = () => { videoEl.removeEventListener('seeked', onS); r(); };
-        videoEl.addEventListener('seeked', onS);
-        videoEl.currentTime = 0;
-      });
-    }
+    // Seek back to 0.0 before starting recording
+    await seekToTime(videoEl, 0.0);
 
     // Hardware presentation frame loop
     const startHardwareLoop = () => {
