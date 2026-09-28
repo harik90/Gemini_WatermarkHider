@@ -29,7 +29,7 @@ export default function ManualRegion({ file, onApply, onCancel }) {
     size: initialSize,
   });
 
-  const [mode, setMode] = useState(isVideo ? 'inpaint' : 'reverse-blend');
+  const [mode, setMode] = useState(file.detectedRegion?.mode || 'reverse-blend');
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef({ mouseX: 0, mouseY: 0, regionX: 0, regionY: 0 });
 
@@ -190,26 +190,24 @@ export default function ManualRegion({ file, onApply, onCancel }) {
             </div>
           )}
 
-          {!isVideo && (
-            <div className="mode-toggle">
-              <button
-                type="button"
-                className={`mode-btn ${mode === 'reverse-blend' ? 'active' : ''}`}
-                onClick={() => setMode('reverse-blend')}
-                title="Reverse Alpha Blend (Lossless for Gemini)"
-              >
-                Exact Blend
-              </button>
-              <button
-                type="button"
-                className={`mode-btn ${mode === 'inpaint' ? 'active' : ''}`}
-                onClick={() => setMode('inpaint')}
-                title="Seamless Boundary Inpainting (Unknown watermarks)"
-              >
-                Inpaint
-              </button>
-            </div>
-          )}
+          <div className="mode-toggle">
+            <button
+              type="button"
+              className={`mode-btn ${mode === 'reverse-blend' ? 'active' : ''}`}
+              onClick={() => setMode('reverse-blend')}
+              title="Reverse Alpha Blend (Lossless for Gemini)"
+            >
+              Exact Blend
+            </button>
+            <button
+              type="button"
+              className={`mode-btn ${mode === 'inpaint' ? 'active' : ''}`}
+              onClick={() => setMode('inpaint')}
+              title="Seamless Boundary Inpainting (Unknown watermarks)"
+            >
+              Inpaint
+            </button>
+          </div>
         </div>
       </div>
 

@@ -170,6 +170,7 @@ function App() {
                 y: result.detection.y,
                 logoSize: result.detection.logoSize,
                 isDualStar: result.detection.isDualStar,
+                mode: customOptions?.mode || 'reverse-blend',
               } : null,
               outputSize: result.blob.size,
               isVideo: true,
