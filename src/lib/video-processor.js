@@ -33,12 +33,13 @@ export function getSupportedMimeType() {
 }
 
 /**
- * Default position for dual-star Gemini video watermark.
- * Watermark sits in the bottom-right corner with aspect ratio ~ 1.65 : 1.25.
+/**
+ * Default position for Gemini / Veo video watermark.
+ * Watermark sits in the bottom-right corner.
  */
-export function getDefaultVideoWatermarkPosition(width, height, logoSize) {
-  const boxW = Math.round(logoSize * 1.65);
-  const boxH = Math.round(logoSize * 1.25);
+export function getDefaultVideoWatermarkPosition(width, height, logoSize, isDualStar = false) {
+  const boxW = isDualStar ? Math.round(logoSize * 1.65) : logoSize;
+  const boxH = isDualStar ? Math.round(logoSize * 1.25) : logoSize;
   const marginX = Math.max(16, Math.floor(width * 0.02));
   const marginY = Math.max(16, Math.floor(height * 0.025));
   return {
@@ -47,34 +48,37 @@ export function getDefaultVideoWatermarkPosition(width, height, logoSize) {
     logoSize,
     boxW,
     boxH,
+    isDualStar,
   };
 }
 
 /**
- * Evaluates the dual-star Gemini watermark alpha mask at (x, y).
+ * Evaluates the watermark alpha mask at (x, y).
  * Primary star centered at (cx1, cy1) with radius r1.
- * Secondary star centered down-right at (cx2, cy2) with radius r2.
+ * Secondary star (if r2 > 0) centered down-right at (cx2, cy2) with radius r2.
  * Includes pad-dilation to encompass anti-aliased edge halos and prevent cyan clipping.
  */
-export function geminiDualStarAlpha(x, y, cx1, cy1, r1, cx2, cy2, r2) {
+export function geminiDualStarAlpha(x, y, cx1, cy1, r1, cx2, cy2, r2 = 0) {
   // Star 1 (Primary Star)
-  const pad1 = Math.max(3.5, r1 * 0.08);
+  const pad1 = Math.max(2.5, r1 * 0.06);
   const dx1 = Math.max(0, Math.abs(x - cx1) - pad1);
   const dy1 = Math.max(0, Math.abs(y - cy1) - pad1);
-  const d1 = Math.pow(dx1 / r1, 0.65) + Math.pow(dy1 / r1, 0.65);
+  const d1 = Math.pow(dx1 / r1, 0.68) + Math.pow(dy1 / r1, 0.68);
   let m1 = 0;
   if (d1 <= 1.15) {
     m1 = Math.max(0, 1.0 - (d1 - 0.70) / 0.45);
   }
 
-  // Star 2 (Secondary Star)
-  const pad2 = Math.max(2.5, r2 * 0.12);
-  const dx2 = Math.max(0, Math.abs(x - cx2) - pad2);
-  const dy2 = Math.max(0, Math.abs(y - cy2) - pad2);
-  const d2 = Math.pow(dx2 / r2, 0.65) + Math.pow(dy2 / r2, 0.65);
+  // Star 2 (Secondary Star for Veo dual-star)
   let m2 = 0;
-  if (d2 <= 1.20) {
-    m2 = Math.max(0, 1.0 - (d2 - 0.70) / 0.50);
+  if (r2 > 0) {
+    const pad2 = Math.max(2.0, r2 * 0.08);
+    const dx2 = Math.max(0, Math.abs(x - cx2) - pad2);
+    const dy2 = Math.max(0, Math.abs(y - cy2) - pad2);
+    const d2 = Math.pow(dx2 / r2, 0.68) + Math.pow(dy2 / r2, 0.68);
+    if (d2 <= 1.20) {
+      m2 = Math.max(0, 1.0 - (d2 - 0.70) / 0.50);
+    }
   }
 
   return Math.min(1.0, Math.max(m1, m2));
@@ -84,15 +88,16 @@ export function geminiDualStarAlpha(x, y, cx1, cy1, r1, cx2, cy2, r2) {
  * Builds a high-speed precomputed LUT (Lookup Table) for video frame inpainting.
  * Calculates spatial boundary weights once so each frame processes in < 0.1ms with 0 allocations.
  */
-export function createVideoWatermarkEngine(patchW, patchH, relX, relY, logoSize) {
-  // Constellation geometry
-  const cx1 = relX + logoSize * 0.40;
+export function createVideoWatermarkEngine(patchW, patchH, relX, relY, logoSize, isDualStar = false) {
+  // Constellation geometry — Primary star is centered exactly in the detected box
+  const cx1 = relX + logoSize * 0.50;
   const cy1 = relY + logoSize * 0.50;
-  const r1 = logoSize * 0.42;
+  const r1 = logoSize * 0.48;
 
-  const cx2 = cx1 + r1 * 0.94;
-  const cy2 = cy1 + r1 * 0.58;
-  const r2 = r1 * 0.38;
+  // Secondary star (for dual-star watermarks like Veo)
+  const cx2 = cx1 + r1 * 1.02;
+  const cy2 = cy1 + r1 * 0.65;
+  const r2 = isDualStar ? r1 * 0.40 : 0;
 
   // 1. Generate mask over patch
   const mask = new Float32Array(patchW * patchH);
@@ -247,6 +252,12 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
   let audioCtx = null;
   let videoEl = null;
 
+  const cleanupVideoEl = () => {
+    if (videoEl && videoEl.parentNode) {
+      videoEl.parentNode.removeChild(videoEl);
+    }
+  };
+
   try {
     if (typeof MediaRecorder === 'undefined') {
       throw new Error('Your browser does not support MediaRecorder for video processing.');
@@ -256,6 +267,18 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
     videoEl.preload = 'auto';
     videoEl.crossOrigin = 'anonymous';
     videoEl.playsInline = true;
+    videoEl.muted = true;
+    videoEl.style.position = 'fixed';
+    videoEl.style.top = '-9999px';
+    videoEl.style.left = '-9999px';
+    videoEl.style.width = '4px';
+    videoEl.style.height = '4px';
+    videoEl.style.opacity = '0';
+    videoEl.style.pointerEvents = 'none';
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.appendChild(videoEl);
+    }
+
     url = URL.createObjectURL(file);
     videoEl.src = url;
 
@@ -290,7 +313,12 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
 
     // Watermark detection across sample frames (handles fade-in from black)
     let detection = null;
-    const defaultPos = getDefaultVideoWatermarkPosition(width, height, options.logoSize || getDefaultLogoSize(width, height));
+    const defaultPos = getDefaultVideoWatermarkPosition(
+      width,
+      height,
+      options.logoSize || getDefaultLogoSize(width, height),
+      options.isDualStar || false
+    );
 
     if (options?.x !== undefined && options?.y !== undefined) {
       detection = {
@@ -298,6 +326,7 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
         y: Math.round(options.y),
         logoSize: options.logoSize || getDefaultLogoSize(width, height),
         confidence: 1.0,
+        isDualStar: options.isDualStar !== undefined ? !!options.isDualStar : false,
       };
     } else {
       const samplePoints = [
@@ -311,7 +340,7 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
         ctx.drawImage(videoEl, 0, 0);
         const sData = ctx.getImageData(0, 0, width, height);
         const d = detectWatermark(sData, width, height, options);
-        if (d.confidence >= 0.45) {
+        if (d.confidence >= 0.40) {
           bestD = d;
           break;
         }
@@ -329,18 +358,45 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
     const watermarkY = detection.y;
     const logoSize = detection.logoSize;
 
+    // Check if secondary star is present (Veo videos vs single-star Gemini videos)
+    let isDualStar = options.isDualStar !== undefined ? !!options.isDualStar : false;
+    if (options.isDualStar === undefined && detection.confidence >= 0.35) {
+      const cx1 = watermarkX + logoSize * 0.50;
+      const cy1 = watermarkY + logoSize * 0.50;
+      const r1 = logoSize * 0.48;
+      const cx2 = Math.round(cx1 + r1 * 1.02);
+      const cy2 = Math.round(cy1 + r1 * 0.65);
+      if (cx2 < width - 4 && cy2 < height - 4) {
+        const patchData = ctx.getImageData(cx2 - 2, cy2 - 2, 5, 5).data;
+        let sSum = 0;
+        for (let i = 0; i < patchData.length; i += 4) {
+          sSum += 0.299 * patchData[i] + 0.587 * patchData[i + 1] + 0.114 * patchData[i + 2];
+        }
+        const star2Luma = sSum / (patchData.length / 4);
+        const bgData = ctx.getImageData(Math.min(width - 2, cx2 + 10), cy2, 1, 1).data;
+        const bgLuma = 0.299 * bgData[0] + 0.587 * bgData[1] + 0.114 * bgData[2];
+        if (star2Luma - bgLuma > 5.0) {
+          isDualStar = true;
+        }
+      }
+    }
+    detection.isDualStar = isDualStar;
+
     // Pad region by 16px to sample true surrounding background for clean boundary inpainting
-    // Dual-star watermark requires ~1.70 width and ~1.30 height
     const pad = 16;
     const patchX = Math.max(0, Math.floor(watermarkX - pad));
     const patchY = Math.max(0, Math.floor(watermarkY - pad));
-    const patchW = Math.min(width - patchX, Math.ceil(logoSize * 1.70 + pad * 2));
-    const patchH = Math.min(height - patchY, Math.ceil(logoSize * 1.30 + pad * 2));
+    const patchW = isDualStar
+      ? Math.min(width - patchX, Math.ceil(logoSize * 1.70 + pad * 2))
+      : Math.min(width - patchX, Math.ceil(logoSize + pad * 2));
+    const patchH = isDualStar
+      ? Math.min(height - patchY, Math.ceil(logoSize * 1.35 + pad * 2))
+      : Math.min(height - patchY, Math.ceil(logoSize + pad * 2));
     const relX = watermarkX - patchX;
     const relY = watermarkY - patchY;
 
-    // Build the high-performance dual-star LUT engine once
-    const engine = createVideoWatermarkEngine(patchW, patchH, relX, relY, logoSize);
+    // Build the high-performance LUT engine once
+    const engine = createVideoWatermarkEngine(patchW, patchH, relX, relY, logoSize, isDualStar);
 
     // Seek back to start
     await safeSeek(videoEl, 0.0);
@@ -418,6 +474,7 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
       isFinished = true;
       videoEl.pause();
       if (animId) cancelAnimationFrame(animId);
+      cleanupVideoEl();
 
       await new Promise((r) => setTimeout(r, 250));
 
@@ -448,7 +505,10 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
         duration,
         frames: frameCount,
         url: URL.createObjectURL(blob),
-        detection,
+        detection: {
+          ...detection,
+          isDualStar,
+        },
       });
     };
 
@@ -485,6 +545,11 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
       }
     };
 
+    videoEl.ontimeupdate = () => {
+      if (isFinished) return;
+      processCurrentFrame();
+    };
+
     videoEl.onended = finish;
 
     if (signal) {
@@ -492,6 +557,7 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
         isFinished = true;
         videoEl.pause();
         if (animId) cancelAnimationFrame(animId);
+        cleanupVideoEl();
         if (mediaRecorder.state !== 'inactive') mediaRecorder.stop();
         if (audioCtx && audioCtx.state !== 'closed') audioCtx.close().catch(() => {});
         if (url) URL.revokeObjectURL(url);
@@ -513,6 +579,7 @@ export async function processVideo(file, onProgress, onComplete, onError, signal
       animId = requestAnimationFrame(loop);
     }
   } catch (err) {
+    cleanupVideoEl();
     if (audioCtx && audioCtx.state !== 'closed') audioCtx.close().catch(() => {});
     if (url) URL.revokeObjectURL(url);
     onError?.(err);
@@ -537,3 +604,4 @@ export function formatETA(seconds) {
 }
 
 export const removeWatermarkFromVideo = processVideo;
+

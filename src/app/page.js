@@ -169,6 +169,7 @@ function App() {
                 x: result.detection.x,
                 y: result.detection.y,
                 logoSize: result.detection.logoSize,
+                isDualStar: result.detection.isDualStar,
               } : null,
               outputSize: result.blob.size,
               isVideo: true,

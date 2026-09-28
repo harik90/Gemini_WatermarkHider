@@ -7,8 +7,10 @@ export default function ManualRegion({ file, onApply, onCancel }) {
   const mediaRef = useRef(null);
 
   const isVideo = !!file.isVideo;
-  const boxAspectW = isVideo ? 1.65 : 1.0;
-  const boxAspectH = isVideo ? 1.25 : 1.0;
+  const [isDualStar, setIsDualStar] = useState(file.detectedRegion?.isDualStar || false);
+
+  const boxAspectW = (isVideo && isDualStar) ? 1.65 : 1.0;
+  const boxAspectH = (isVideo && isDualStar) ? 1.25 : 1.0;
 
   const initialSize = file.detectedRegion?.logoSize || file.logoSize || 48;
   const initialBoxW = Math.round(initialSize * boxAspectW);
@@ -127,6 +129,7 @@ export default function ManualRegion({ file, onApply, onCancel }) {
       y: region.y,
       logoSize: region.size,
       mode,
+      isDualStar,
     });
   };
 
@@ -142,11 +145,11 @@ export default function ManualRegion({ file, onApply, onCancel }) {
       <div className="manual-region-toolbar">
         <div className="manual-region-meta">
           <span className="badge badge-accent">
-            {isVideo ? 'Dual-Star Video Region' : 'Interactive Adjustment'}
+            {isVideo ? (isDualStar ? 'Dual-Star Video Region' : 'Single-Star Video Region') : 'Interactive Adjustment'}
           </span>
           <span className="manual-region-hint">
             {isVideo
-              ? 'Drag the dual-star box over both Gemini stars. Auto-adjusted for video.'
+              ? (isDualStar ? 'Dual-star box covering both stars.' : 'Single-star box covering the 4-pointed sparkle.')
               : 'Click or drag the box to reposition the watermark region.'}
           </span>
         </div>
@@ -166,36 +169,47 @@ export default function ManualRegion({ file, onApply, onCancel }) {
             <span className="size-val">{region.size}px</span>
           </div>
 
-          <div className="mode-toggle">
-            {isVideo ? (
+          {isVideo && (
+            <div className="mode-toggle">
               <button
                 type="button"
-                className="mode-btn active"
-                title="Chroma-safe dual-star boundary inpainting (eliminates cyan/green YUV compression artifacts)"
+                className={`mode-btn ${!isDualStar ? 'active' : ''}`}
+                onClick={() => setIsDualStar(false)}
+                title="Single 4-pointed sparkle star (Gemini / Imagen)"
               >
-                Chroma-Safe Inpaint
+                1 Star
               </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className={`mode-btn ${mode === 'reverse-blend' ? 'active' : ''}`}
-                  onClick={() => setMode('reverse-blend')}
-                  title="Reverse Alpha Blend (Lossless for Gemini)"
-                >
-                  Exact Blend
-                </button>
-                <button
-                  type="button"
-                  className={`mode-btn ${mode === 'inpaint' ? 'active' : ''}`}
-                  onClick={() => setMode('inpaint')}
-                  title="Seamless Diffusion Inpainting (Unknown watermarks)"
-                >
-                  Inpaint
-                </button>
-              </>
-            )}
-          </div>
+              <button
+                type="button"
+                className={`mode-btn ${isDualStar ? 'active' : ''}`}
+                onClick={() => setIsDualStar(true)}
+                title="Dual sparkle stars (Veo)"
+              >
+                2 Stars (Veo)
+              </button>
+            </div>
+          )}
+
+          {!isVideo && (
+            <div className="mode-toggle">
+              <button
+                type="button"
+                className={`mode-btn ${mode === 'reverse-blend' ? 'active' : ''}`}
+                onClick={() => setMode('reverse-blend')}
+                title="Reverse Alpha Blend (Lossless for Gemini)"
+              >
+                Exact Blend
+              </button>
+              <button
+                type="button"
+                className={`mode-btn ${mode === 'inpaint' ? 'active' : ''}`}
+                onClick={() => setMode('inpaint')}
+                title="Seamless Boundary Inpainting (Unknown watermarks)"
+              >
+                Inpaint
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -256,7 +270,7 @@ export default function ManualRegion({ file, onApply, onCancel }) {
             <div className="box-corner bottom-left" />
             <div className="box-corner bottom-right" />
 
-            {isVideo ? (
+            {isVideo && isDualStar ? (
               <svg
                 viewBox="0 0 165 125"
                 preserveAspectRatio="none"
@@ -271,7 +285,7 @@ export default function ManualRegion({ file, onApply, onCancel }) {
               >
                 {/* Primary Star Astroid (Left) */}
                 <path
-                  d="M 66 9 C 66 38 41 62 13 62 C 41 62 66 86 66 115 C 66 86 91 62 119 62 C 91 62 66 38 66 9 Z"
+                  d="M 50 6 C 50 35 29 56 6 56 C 29 56 50 77 50 106 C 50 77 71 56 94 56 C 71 56 50 35 50 6 Z"
                   fill="rgba(245, 158, 11, 0.22)"
                   stroke="#FBBF24"
                   strokeWidth="1.5"
@@ -285,20 +299,29 @@ export default function ManualRegion({ file, onApply, onCancel }) {
                 />
               </svg>
             ) : (
-              <div className="box-center-crosshair">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="5 9 2 12 5 15" />
-                  <polyline points="9 5 12 2 15 5" />
-                  <polyline points="15 19 12 22 9 19" />
-                  <polyline points="19 9 22 12 19 15" />
-                  <line x1="2" y1="12" x2="22" y2="12" />
-                  <line x1="12" y1="2" x2="12" y2="22" />
-                </svg>
-              </div>
+              <svg
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  pointerEvents: 'none',
+                  opacity: 0.85,
+                }}
+              >
+                <path
+                  d="M 50 4 C 50 30 30 50 4 50 C 30 50 50 70 50 96 C 50 70 70 50 96 50 C 70 50 50 30 50 4 Z"
+                  fill="rgba(245, 158, 11, 0.22)"
+                  stroke="#FBBF24"
+                  strokeWidth="1.5"
+                />
+              </svg>
             )}
 
             <span className="box-tag">
-              {isVideo ? 'Dual-Star Video Watermark' : 'Watermark'}
+              {isVideo ? (isDualStar ? 'Dual-Star' : 'Single-Star') : 'Watermark'}
             </span>
           </div>
         </div>
@@ -311,7 +334,7 @@ export default function ManualRegion({ file, onApply, onCancel }) {
           <span>Y: <strong>{region.y}px</strong></span>
           <span className="coord-sep">·</span>
           <span>
-            Box: <strong>{boxW}×{boxH}px</strong> {isVideo ? '(Dual-Star)' : ''}
+            Box: <strong>{boxW}×{boxH}px</strong> {isVideo ? (isDualStar ? '(Dual-Star)' : '(Single-Star)') : ''}
           </span>
         </div>
 
@@ -333,3 +356,4 @@ export default function ManualRegion({ file, onApply, onCancel }) {
     </div>
   );
 }
+

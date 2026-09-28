@@ -71,8 +71,9 @@ function buildBoundaryModel(data, imgW, imgH, x0, y0, w, h) {
   const left = [];
   const right = [];
 
-  const yTop = Math.max(0, y0 - 2);
-  const yBtm = Math.min(imgH - 1, y0 + h + 1);
+  const pad = Math.max(3, Math.floor(w * 0.08));
+  const yTop = Math.max(0, y0 - pad);
+  const yBtm = Math.min(imgH - 1, y0 + h + pad);
 
   for (let x = 0; x < w; x++) {
     const px = Math.min(imgW - 1, Math.max(0, x0 + x));
@@ -82,8 +83,8 @@ function buildBoundaryModel(data, imgW, imgH, x0, y0, w, h) {
     bottom.push([data[bIdx], data[bIdx + 1], data[bIdx + 2]]);
   }
 
-  const xLft = Math.max(0, x0 - 2);
-  const xRgt = Math.min(imgW - 1, x0 + w + 1);
+  const xLft = Math.max(0, x0 - pad);
+  const xRgt = Math.min(imgW - 1, x0 + w + pad);
 
   for (let y = 0; y < h; y++) {
     const py = Math.min(imgH - 1, Math.max(0, y0 + y));
@@ -99,18 +100,21 @@ function buildBoundaryModel(data, imgW, imgH, x0, y0, w, h) {
 function getInpaintValue(boundary, relX, relY, channel) {
   const { top, bottom, left, right, w, h } = boundary;
 
-  const hPct = (relX + 1) / (w + 1);
-  const vPct = (relY + 1) / (h + 1);
+  const rx = Math.min(w - 1, Math.max(0, relX));
+  const ry = Math.min(h - 1, Math.max(0, relY));
 
-  const tVal = top[relX] ? top[relX][channel] : 128;
-  const bVal = bottom[relX] ? bottom[relX][channel] : 128;
-  const lVal = left[relY] ? left[relY][channel] : 128;
-  const rVal = right[relY] ? right[relY][channel] : 128;
+  const hPct = (rx + 0.5) / w;
+  const vPct = (ry + 0.5) / h;
+
+  const tVal = top[rx] ? top[rx][channel] : 128;
+  const bVal = bottom[rx] ? bottom[rx][channel] : 128;
+  const lVal = left[ry] ? left[ry][channel] : 128;
+  const rVal = right[ry] ? right[ry][channel] : 128;
 
   const vInterp = tVal * (1 - vPct) + bVal * vPct;
   const hInterp = lVal * (1 - hPct) + rVal * hPct;
 
-  return (vInterp + hInterp) / 2;
+  return (vInterp + hInterp) * 0.5;
 }
 
 /**
@@ -121,6 +125,7 @@ export function removeWatermark(imageData, width, height, options = {}) {
     x: customX,
     y: customY,
     logoSize: customSize,
+    mode = 'reverse-blend',
   } = options;
 
   const logoSize = customSize || getDefaultLogoSize(width, height);
@@ -136,6 +141,7 @@ export function removeWatermark(imageData, width, height, options = {}) {
 
   const data = imageData.data;
   const boundary = buildBoundaryModel(data, width, height, rx, ry, logoSize, logoSize);
+  const isPureInpaint = mode === 'inpaint';
 
   for (let y = 0; y < logoSize; y++) {
     const py = ry + y;
@@ -158,27 +164,58 @@ export function removeWatermark(imageData, width, height, options = {}) {
 
       const idx = (rowOffset + px) * 4;
       const oneMinusA = 1 - alpha;
-      const inpaintWeight = smoothstep(0.15, 0.65, alpha);
+      const inpaintWeight = isPureInpaint ? 1.0 : smoothstep(0.18, 0.70, alpha);
 
-      for (let c = 0; c < 3; c++) {
-        const watermarked = data[idx + c];
-        const inpaintVal = getInpaintValue(boundary, x, y, c);
+      // Pre-sample inpaint values for all 3 channels
+      const inpaintVals = [
+        getInpaintValue(boundary, x, y, 0),
+        getInpaintValue(boundary, x, y, 1),
+        getInpaintValue(boundary, x, y, 2),
+      ];
 
-        // Reverse alpha-blend formula
-        const alpha255 = alpha * 255;
-        const computedOriginal = oneMinusA > 0.05 ? (watermarked - alpha255) / oneMinusA : inpaintVal;
+      const compOriginal = [0, 0, 0];
+      let needsFallback = isPureInpaint;
 
-        // Per-pixel sanity check: sample 5x5 neighborhood average
-        const localAvg = sample5x5Avg(data, width, height, px, py, c);
+      if (!needsFallback) {
+        for (let c = 0; c < 3; c++) {
+          const watermarked = data[idx + c];
+          const alpha255 = alpha * 255;
+          const orig = oneMinusA > 0.04 ? (watermarked - alpha255) / oneMinusA : inpaintVals[c];
+          compOriginal[c] = orig;
 
-        let corrected;
-        if (computedOriginal < 0 || computedOriginal > 255 || (localAvg - computedOriginal) > 35) {
-          corrected = inpaintVal;
-        } else {
-          corrected = computedOriginal * (1 - inpaintWeight) + inpaintVal * inpaintWeight;
+          if (orig < 0 || orig > 255) {
+            needsFallback = true;
+          } else {
+            const localAvg = sample5x5Avg(data, width, height, px, py, c);
+            if (Math.abs(localAvg - orig) > 36) {
+              needsFallback = true;
+            }
+          }
         }
 
-        // Apply feathering: blend corrected pixel smoothly into original pixel
+        // Chromatic shift protection: protect against cyan/green artifacts
+        if (!needsFallback) {
+          const origRG = compOriginal[0] - compOriginal[1];
+          const origGB = compOriginal[1] - compOriginal[2];
+          const inpRG = inpaintVals[0] - inpaintVals[1];
+          const inpGB = inpaintVals[1] - inpaintVals[2];
+          if (Math.abs(origRG - inpRG) > 25 || Math.abs(origGB - inpGB) > 25) {
+            needsFallback = true;
+          }
+        }
+      }
+
+      // Synchronously apply corrected values across R, G, B
+      for (let c = 0; c < 3; c++) {
+        const watermarked = data[idx + c];
+        const inpaintVal = inpaintVals[c];
+        let corrected;
+        if (needsFallback) {
+          corrected = inpaintVal;
+        } else {
+          corrected = compOriginal[c] * (1 - inpaintWeight) + inpaintVal * inpaintWeight;
+        }
+
         const finalVal = watermarked + (corrected - watermarked) * feather;
         data[idx + c] = clamp(finalVal);
       }
@@ -221,6 +258,7 @@ export function removeWatermarkFromImage(imageOrCanvas, options = {}) {
     x: detection.x,
     y: detection.y,
     logoSize: detection.logoSize,
+    mode: options.mode,
   });
 
   ctx.putImageData(imageData, 0, 0);
