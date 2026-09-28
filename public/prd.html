@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClearMark PRD — Product Requirements Document</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --font-display: 'Newsreader', Garamond, Georgia, serif;
+      --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --transition: 200ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    [data-theme="dark"] {
+      --bg: #0C0B0A;
+      --text: #F2F0EA;
+      --text-muted: #8E8A82;
+      --text-dim: #54514B;
+      --accent: #D4AF67;
+      --border: rgba(242, 240, 234, 0.08);
+      --border-strong: rgba(242, 240, 234, 0.16);
+      --dot-color: rgba(212, 175, 103, 0.045);
+      --callout-bg: rgba(242, 240, 234, 0.02);
+      --code-bg: rgba(242, 240, 234, 0.05);
+      --badge-bg: rgba(212, 175, 103, 0.1);
+    }
+
+    [data-theme="light"] {
+      --bg: #FAF9F6;
+      --text: #181716;
+      --text-muted: #66635D;
+      --text-dim: #A8A49D;
+      --accent: #9A7428;
+      --border: rgba(24, 23, 22, 0.08);
+      --border-strong: rgba(24, 23, 22, 0.16);
+      --dot-color: rgba(154, 116, 40, 0.035);
+      --callout-bg: rgba(24, 23, 22, 0.02);
+      --code-bg: rgba(24, 23, 22, 0.04);
+      --badge-bg: rgba(154, 116, 40, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      line-height: 1.75;
+      background-image: radial-gradient(circle, var(--dot-color) 1px, transparent 1px);
+      background-size: 24px 24px;
+      background-position: 0 0;
+      transition: background-color var(--transition), color var(--transition);
+      min-height: 100vh;
+    }
+
+    /* ── Top Utility Bar ────────────────────────────────────────── */
+    .top-bar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in srgb, var(--bg) 85%, transparent);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.8125rem;
+    }
+
+    .doc-status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-muted);
+      letter-spacing: 0.02em;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .theme-toggle-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 6px 12px;
+      border-radius: 9999px;
+      font-family: var(--font-body);
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+
+    .theme-toggle-btn:hover {
+      color: var(--text);
+      border-color: var(--border-strong);
+    }
+
+    .theme-toggle-btn svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    /* ── Main Document Container ────────────────────────────────── */
+    .document-wrapper {
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 64px 32px 140px;
+    }
+
+    /* ── Hero / Cover Moment ────────────────────────────────────── */
+    .hero-cover {
+      margin-bottom: 64px;
+      padding-bottom: 40px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 24px 16px;
+      margin-bottom: 48px;
+      font-size: 0.8125rem;
+    }
+
+    .meta-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .meta-label {
+      color: var(--text-dim);
+      font-size: 0.6875rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .meta-value {
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .meta-value.highlight {
+      color: var(--text);
+    }
+
+    .hero-title {
+      font-family: var(--font-display);
+      font-size: clamp(2.5rem, 5vw, 3.5rem);
+      font-weight: 400;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      margin-bottom: 16px;
+    }
+
+    .hero-title em {
+      font-style: italic;
+      font-family: var(--font-display);
+      font-weight: 400;
+    }
+
+    .hero-summary {
+      font-size: 1.0625rem;
+      color: var(--text-muted);
+      max-width: 640px;
+      line-height: 1.65;
+    }
+
+    /* ── Table of Contents ──────────────────────────────────────── */
+    .toc-block {
+      background: var(--callout-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px 28px;
+      margin-bottom: 64px;
+    }
+
+    .toc-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+      margin-bottom: 16px;
+      font-weight: 600;
+    }
+
+    .toc-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 32px;
+      list-style: none;
+    }
+
+    .toc-list a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.875rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: color var(--transition);
+    }
+
+    .toc-list a:hover {
+      color: var(--text);
+    }
+
+    .toc-list .toc-num {
+      color: var(--accent);
+      font-size: 0.75rem;
+      font-variant-numeric: tabular-nums;
+      font-family: var(--font-body);
+    }
+
+    /* ── Content Sections ───────────────────────────────────────── */
+    section {
+      margin-bottom: 64px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 24px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sec-num {
+      font-family: var(--font-body);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+
+    h2 {
+      font-family: var(--font-display);
+      font-size: 1.625rem;
+      font-weight: 400;
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+
+    h3 {
+      font-family: var(--font-display);
+      font-size: 1.25rem;
+      font-weight: 500;
+      color: var(--text);
+      margin: 32px 0 12px;
+      letter-spacing: -0.005em;
+    }
+
+    p {
+      margin-bottom: 18px;
+      color: var(--text-muted);
+      font-size: 0.9375rem;
+      max-width: 68ch;
+    }
+
+    p strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    ul, ol {
+      margin: 0 0 24px 20px;
+      color: var(--text-muted);
+      font-size: 0.9375rem;
+    }
+
+    li {
+      margin-bottom: 8px;
+      max-width: 68ch;
+    }
+
+    li strong {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    /* ── Technical Formula Callout ──────────────────────────────── */
+    .formula-callout {
+      border: 1px solid var(--border);
+      border-left: 2px solid var(--accent);
+      background: var(--callout-bg);
+      border-radius: 0 8px 8px 0;
+      padding: 20px 24px;
+      margin: 28px 0;
+    }
+
+    .formula-label {
+      font-size: 0.6875rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    .formula-math {
+      font-family: 'Newsreader', Georgia, serif;
+      font-style: italic;
+      font-size: 1.1875rem;
+      color: var(--text);
+      margin-bottom: 6px;
+      letter-spacing: 0.01em;
+    }
+
+    .formula-desc {
+      font-size: 0.8125rem;
+      color: var(--text-dim);
+      line-height: 1.5;
+      margin-bottom: 0;
+    }
+
+    /* ── Minimal Table Styling ──────────────────────────────────── */
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      margin: 28px 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      text-align: left;
+    }
+
+    th {
+      font-weight: 600;
+      color: var(--text);
+      padding: 10px 16px 10px 0;
+      border-bottom: 1px solid var(--border-strong);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    td {
+      padding: 14px 16px 14px 0;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+      line-height: 1.6;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    td.primary-col {
+      color: var(--text);
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    /* ── Code / Monospace ───────────────────────────────────────── */
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.8125em;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--text);
+    }
+
+    /* ── Responsive Pass ────────────────────────────────────────── */
+    @media (max-width: 680px) {
+      .document-wrapper {
+        padding: 40px 20px 80px;
+      }
+      .meta-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .toc-list {
+        grid-template-columns: 1fr;
+      }
+      .top-bar {
+        padding: 10px 16px;
+      }
+    }
+
+    /* ── Print Stylesheet ───────────────────────────────────────── */
+    @media print {
+      body {
+        background: white !important;
+        color: #111 !important;
+        background-image: none !important;
+      }
+      .top-bar {
+        display: none !important;
+      }
+      .document-wrapper {
+        padding: 0 !important;
+        max-width: 100% !important;
+      }
+      .formula-callout {
+        border-color: #ccc !important;
+        background: #f9f9f9 !important;
+      }
+      a {
+        color: inherit !important;
+        text-decoration: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Sticky Top Utility Bar -->
+  <header class="top-bar">
+    <div class="doc-status-indicator">
+      <span class="status-dot"></span>
+      <span>ClearMark Product Specification · Version 1.0</span>
+    </div>
+    <button class="theme-toggle-btn" id="themeToggle" aria-label="Toggle light or dark theme">
+      <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="5"></circle>
+        <line x1="12" y1="1" x2="12" y2="3"></line>
+        <line x1="12" y1="21" x2="12" y2="23"></line>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+        <line x1="1" y1="12" x2="3" y2="12"></line>
+        <line x1="21" y1="12" x2="23" y2="12"></line>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+      </svg>
+      <span id="themeLabel">Light Mode</span>
+    </button>
+  </header>
+
+  <div class="document-wrapper">
+
+    <!-- Document Cover / Hero Moment -->
+    <header class="hero-cover">
+      <div class="meta-grid">
+        <div class="meta-item">
+          <span class="meta-label">Document</span>
+          <span class="meta-value highlight">Product Requirements (PRD)</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Release</span>
+          <span class="meta-value">Version 1.0 · Web</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Date</span>
+          <span class="meta-value">September 27, 2026</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Classification</span>
+          <span class="meta-value">Internal Specification</span>
+        </div>
+      </div>
+
+      <h1 class="hero-title">ClearMark: <em>Bulk & Video AI Watermark Removal</em></h1>
+      <p class="hero-summary">
+        A client-side web product for exact, artifact-free removal of Gemini and Veo sparkle watermarks across bulk image sets and video sequences — operating at zero inference cost with complete user privacy.
+      </p>
+    </header>
+
+    <!-- Table of Contents -->
+    <nav class="toc-block" aria-label="Table of Contents">
+      <div class="toc-title">Document Index</div>
+      <ul class="toc-list">
+        <li><a href="#overview"><span class="toc-num">01</span> Overview & Problem Statement</a></li>
+        <li><a href="#technical-insight"><span class="toc-num">02</span> Core Mathematical Insight</a></li>
+        <li><a href="#goals"><span class="toc-num">03</span> Goals & Scope Boundaries</a></li>
+        <li><a href="#user-flows"><span class="toc-num">04</span> Primary User Flows</a></li>
+        <li><a href="#specifications"><span class="toc-num">05</span> Feature Requirements</a></li>
+        <li><a href="#architecture"><span class="toc-num">06</span> Technical Architecture</a></li>
+        <li><a href="#metrics"><span class="toc-num">07</span> Success Metrics & Polish</a></li>
+        <li><a href="#decisions"><span class="toc-num">08</span> Open Questions & Decisions</a></li>
+      </ul>
+    </nav>
+
+    <!-- 01 Overview -->
+    <section id="overview">
+      <div class="section-header">
+        <span class="sec-num">01</span>
+        <h2>Overview & Problem Statement</h2>
+      </div>
+      <p>
+        Google's frontier image and video generation models (Gemini, Nano Banana, Veo, Flow) composite a visible four-point sparkle watermark at fixed positions on every exported output. Creators, marketing teams, designers, and agencies utilizing these models for client presentations, marketing collateral, and production creative often require clean assets unencumbered by this mark.
+      </p>
+      <p>
+        <strong>ClearMark</strong> is designed as a focused creative utility that removes this watermark from images and videos in bulk, instantly, and to a pixel-perfect standard. Rather than masquerading as a generic ad-supported online tool, ClearMark maintains an intentional, restrained experience that prioritizes privacy, batch throughput, and mathematical fidelity.
+      </p>
+    </section>
+
+    <!-- 02 Core Mathematical Insight -->
+    <section id="technical-insight">
+      <div class="section-header">
+        <span class="sec-num">02</span>
+        <h2>Core Mathematical Insight</h2>
+      </div>
+      <p>
+        The Gemini watermark is not stamped as opaque pixels, nor is it an unconstrained inpainting challenge. It is composited using standard linear alpha blending with a fixed astroid star shape and known opacity map (&alpha;) at calibrated resolution steps:
+      </p>
+
+      <div class="formula-callout">
+        <div class="formula-label">Forward Composition</div>
+        <div class="formula-math">watermarked_pixel = &alpha; &times; 255 + (1 &minus; &alpha;) &times; original_pixel</div>
+        <p class="formula-desc">Because the logo color is fixed white (255) and &alpha; is pre-calibrated, the forward blend is algebraically invertible.</p>
+      </div>
+
+      <div class="formula-callout">
+        <div class="formula-label">Exact Algebraic Inverse</div>
+        <div class="formula-math">original_pixel = (watermarked_pixel &minus; &alpha; &times; 255) / (1 &minus; &alpha;)</div>
+        <p class="formula-desc">Reversal is deterministic and runs entirely on device via the Canvas API. No server-side inference or GPU roundtrips are required.</p>
+      </div>
+
+      <p>
+        <strong>Boundary Robustness:</strong> In low-luminance regions (e.g. night skies or dark water), aggressive alpha inversion can risk underflow artifacts. ClearMark enforces an alpha safety ceiling (&alpha; &le; 0.38), local 5&times;5 neighborhood sanity checks, and a bilateral boundary inpainting fallback to ensure zero dark blotches occur under any lighting condition.
+      </p>
+    </section>
+
+    <!-- 03 Goals & Scope -->
+    <section id="goals">
+      <div class="section-header">
+        <span class="sec-num">03</span>
+        <h2>Goals & Scope Boundaries</h2>
+      </div>
+      <p>Clear boundaries ensure the product ships with depth on its core thesis rather than dilute quality across tangential workflows.</p>
+
+      <h3>Primary Goals</h3>
+      <ul>
+        <li><strong>Lossless restoration:</strong> Zero visible blur or boundary ringing for Gemini and Veo watermarks on supported resolutions.</li>
+        <li><strong>True bulk capacity:</strong> Process dozens to hundreds of files in parallel via Web Workers without degrading browser responsiveness.</li>
+        <li><strong>Frame-by-frame video:</strong> Support MP4, MOV, and WebM video files with original audio streams preserved and zero quality loss.</li>
+        <li><strong>Local privacy:</strong> Zero file uploads to external servers. All image and video processing executes inside the user's browser sandbox.</li>
+      </ul>
+
+      <h3>Out of Scope for Version 1.0</h3>
+      <ul>
+        <li>Removing arbitrary third-party logos or opaque watermarks via generative diffusion inpainting.</li>
+        <li>Native mobile applications (iOS/Android) — v1 is an optimized, responsive web application.</li>
+        <li>Multiplayer team workspaces, cloud project storage, or enterprise asset management.</li>
+        <li>Circumventing steganographic watermarks (e.g. SynthID), which are structurally distinct and not visually intrusive.</li>
+      </ul>
+    </section>
+
+    <!-- 04 User Flows -->
+    <section id="user-flows">
+      <div class="section-header">
+        <span class="sec-num">04</span>
+        <h2>Primary User Flows</h2>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Workflow</th>
+              <th>Trigger & Input</th>
+              <th>Processing State</th>
+              <th>Terminal Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="primary-col">Bulk Image Batch</td>
+              <td>Drag-drop images, folder, or .zip archive onto canvas drop zone</td>
+              <td>Parallel Web Worker execution with per-item progress rings and status badges</td>
+              <td>Interactive before/after inspection slider & single-click ZIP archive download</td>
+            </tr>
+            <tr>
+              <td class="primary-col">Video Sequence</td>
+              <td>Drop MP4/MOV/WebM clip (up to 4K resolution)</td>
+              <td>Frame-by-frame reverse blend via WebCodecs/Canvas with live ETA and cancel action</td>
+              <td>Side-by-side synchronized video preview and lossless WebM export</td>
+            </tr>
+            <tr>
+              <td class="primary-col">Manual Region Override</td>
+              <td>File flagged with "Check result" or unusual aspect ratio</td>
+              <td>Interactive draggable/resizable bounding box on natural image canvas</td>
+              <td>Instant re-processing using calibrated reverse blend or harmonic inpaint</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 05 Feature Requirements -->
+    <section id="specifications">
+      <div class="section-header">
+        <span class="sec-num">05</span>
+        <h2>Feature Specifications</h2>
+      </div>
+
+      <h3>Upload & Ingestion Pipeline</h3>
+      <ul>
+        <li>Multi-file selection via file picker, paste from clipboard (<code>Cmd/Ctrl+V</code>), and drag-and-drop.</li>
+        <li>Recursive folder ingestion via <code>webkitGetAsEntry</code> to traverse nested asset directories.</li>
+        <li>In-browser ZIP decompression using JSZip to immediately expand archives into queue items without server uploads.</li>
+      </ul>
+
+      <h3>Detection & Positioning Engine</h3>
+      <ul>
+        <li>Two-pass coarse-to-fine 2D cross-correlation scan across bottom-right and corner quadrants.</li>
+        <li>Correlation peak estimation against calibrated 32px, 48px, 64px, and 96px astroid alpha templates.</li>
+        <li>Confidence scoring (0.0 to 1.0) surfacing review flags only when confidence falls below 0.45.</li>
+      </ul>
+
+      <h3>Reverse Blend & Inpaint Hybrid</h3>
+      <ul>
+        <li>Primary reverse alpha blending with dynamic feathering via smoothstep radial decay.</li>
+        <li>Local 5&times;5 neighborhood sanity verification discarding overcorrections that fall &gt;40 luminance units darker than surrounding context.</li>
+        <li>Boundary Laplace diffusion fallback providing seamless fill for uncalibrated watermark regions.</li>
+      </ul>
+    </section>
+
+    <!-- 06 Technical Architecture -->
+    <section id="architecture">
+      <div class="section-header">
+        <span class="sec-num">06</span>
+        <h2>Technical Architecture</h2>
+      </div>
+      <p>
+        The system relies on a modular client-side architecture that eliminates infrastructure overhead and guarantees sub-second processing for images:
+      </p>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Layer</th>
+              <th>Technology</th>
+              <th>Responsibilities</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="primary-col">Presentation</td>
+              <td>HTML5, Vanilla CSS, Next.js App Router</td>
+              <td>Design token system, zero-dependency slider, modals, batch summary bar</td>
+            </tr>
+            <tr>
+              <td class="primary-col">Concurrency</td>
+              <td>Web Workers API</td>
+              <td>Off-main-thread image processing across 4–6 worker threads</td>
+            </tr>
+            <tr>
+              <td class="primary-col">Video Engine</td>
+              <td>WebCodecs, MediaRecorder, Canvas</td>
+              <td>Frame seeking, reverse-alpha pass per frame, audio track muxing</td>
+            </tr>
+            <tr>
+              <td class="primary-col">Persistence</td>
+              <td>IndexedDB (<code>clearmark_session_db</code>)</td>
+              <td>Session queue preservation across accidental page reloads</td>
+            </tr>
+            <tr>
+              <td class="primary-col">Archive Utility</td>
+              <td>JSZip</td>
+              <td>Client-side archive decompression and batch ZIP assembly</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 07 Metrics -->
+    <section id="metrics">
+      <div class="section-header">
+        <span class="sec-num">07</span>
+        <h2>Success Metrics & Polish</h2>
+      </div>
+      <ul>
+        <li><strong>Time-to-first-clean-result:</strong> Under 3.0 seconds from image drop to visible clean preview on standard hardware.</li>
+        <li><strong>High-confidence auto-detection:</strong> Greater than 95% detection accuracy on unmodified Gemini/Veo exports without manual intervention.</li>
+        <li><strong>Visual artifact threshold:</strong> Zero solid black blotches, zero edge halo lines, and seamless texture continuity on dark landscapes and night shots.</li>
+        <li><strong>Batch completion rate:</strong> Greater than 92% of initiated batches successfully exported as individual files or ZIP archives.</li>
+      </ul>
+    </section>
+
+    <!-- 08 Open Decisions -->
+    <section id="decisions">
+      <div class="section-header">
+        <span class="sec-num">08</span>
+        <h2>Open Questions & Decisions</h2>
+      </div>
+      <ul>
+        <li><strong>Nano Banana / Flow calibration:</strong> Evaluate whether secondary model releases introduce distinct alpha masks or remain identical to Gemini's 48px/64px profiles.</li>
+        <li><strong>Browser extension companion:</strong> Assess demand for an extension enabling one-click download directly inside Google Workspace and Gemini web interfaces.</li>
+        <li><strong>Batch size gates:</strong> Establish tier limits for single-session batch volume (e.g. 25 images on free tier vs. unlimited on paid tier).</li>
+      </ul>
+    </section>
+
+  </div>
+
+  <script>
+    // Theme Management with Local Storage Persistence
+    const toggleBtn = document.getElementById('themeToggle');
+    const themeLabel = document.getElementById('themeLabel');
+    const root = document.documentElement;
+
+    function setTheme(theme) {
+      root.setAttribute('data-theme', theme);
+      localStorage.setItem('clearmark_prd_theme', theme);
+      if (theme === 'light') {
+        themeLabel.textContent = 'Dark Mode';
+      } else {
+        themeLabel.textContent = 'Light Mode';
+      }
+    }
+
+    // Default to dark mode on load, or honor saved preference
+    const savedTheme = localStorage.getItem('clearmark_prd_theme') || 'dark';
+    setTheme(savedTheme);
+
+    toggleBtn.addEventListener('click', () => {
+      const current = root.getAttribute('data-theme');
+      setTheme(current === 'dark' ? 'light' : 'dark');
+    });
+  </script>
+</body>
+</html>
