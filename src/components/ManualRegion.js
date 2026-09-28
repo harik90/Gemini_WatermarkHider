@@ -4,11 +4,22 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 
 export default function ManualRegion({ file, onApply, onCancel }) {
   const containerRef = useRef(null);
-  const imgRef = useRef(null);
+  const mediaRef = useRef(null);
+
+  const isVideo = !!file.isVideo;
+  const boxAspectW = isVideo ? 1.65 : 1.0;
+  const boxAspectH = isVideo ? 1.25 : 1.0;
 
   const initialSize = file.detectedRegion?.logoSize || file.logoSize || 48;
-  const initialX = file.detectedRegion?.x !== undefined ? file.detectedRegion.x : (file.width ? file.width - initialSize - 16 : 0);
-  const initialY = file.detectedRegion?.y !== undefined ? file.detectedRegion.y : (file.height ? file.height - initialSize - 16 : 0);
+  const initialBoxW = Math.round(initialSize * boxAspectW);
+  const initialBoxH = Math.round(initialSize * boxAspectH);
+
+  const initialX = file.detectedRegion?.x !== undefined
+    ? file.detectedRegion.x
+    : (file.width ? Math.max(0, file.width - initialBoxW - 16) : 0);
+  const initialY = file.detectedRegion?.y !== undefined
+    ? file.detectedRegion.y
+    : (file.height ? Math.max(0, file.height - initialBoxH - 16) : 0);
 
   const [region, setRegion] = useState({
     x: initialX,
@@ -16,17 +27,17 @@ export default function ManualRegion({ file, onApply, onCancel }) {
     size: initialSize,
   });
 
-  const [mode, setMode] = useState('reverse-blend');
+  const [mode, setMode] = useState(isVideo ? 'inpaint' : 'reverse-blend');
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef({ mouseX: 0, mouseY: 0, regionX: 0, regionY: 0 });
 
-  // Scale factor between displayed image and natural image
+  // Scale factor between displayed media and natural dimensions
   const [scale, setScale] = useState(1);
 
   const updateScale = useCallback(() => {
-    if (imgRef.current) {
-      const naturalWidth = imgRef.current.naturalWidth || file.width || 1;
-      const displayedWidth = imgRef.current.clientWidth;
+    if (mediaRef.current) {
+      const naturalWidth = mediaRef.current.videoWidth || mediaRef.current.naturalWidth || file.width || 1;
+      const displayedWidth = mediaRef.current.clientWidth;
       if (displayedWidth && naturalWidth) {
         setScale(displayedWidth / naturalWidth);
       }
@@ -37,6 +48,9 @@ export default function ManualRegion({ file, onApply, onCancel }) {
     window.addEventListener('resize', updateScale);
     return () => window.removeEventListener('resize', updateScale);
   }, [updateScale]);
+
+  const boxW = Math.round(region.size * boxAspectW);
+  const boxH = Math.round(region.size * boxAspectH);
 
   const handlePointerDown = (e) => {
     e.preventDefault();
@@ -56,10 +70,10 @@ export default function ManualRegion({ file, onApply, onCancel }) {
     const dx = (e.clientX - dragStart.current.mouseX) / scale;
     const dy = (e.clientY - dragStart.current.mouseY) / scale;
 
-    const naturalW = imgRef.current?.naturalWidth || file.width || 1000;
-    const naturalH = imgRef.current?.naturalHeight || file.height || 1000;
-    const maxX = Math.max(0, naturalW - region.size);
-    const maxY = Math.max(0, naturalH - region.size);
+    const naturalW = mediaRef.current?.videoWidth || mediaRef.current?.naturalWidth || file.width || 1000;
+    const naturalH = mediaRef.current?.videoHeight || mediaRef.current?.naturalHeight || file.height || 1000;
+    const maxX = Math.max(0, naturalW - boxW);
+    const maxY = Math.max(0, naturalH - boxH);
 
     setRegion((prev) => ({
       ...prev,
@@ -80,24 +94,26 @@ export default function ManualRegion({ file, onApply, onCancel }) {
   const handleStageClick = (e) => {
     if (isDragging) return;
     if (e.target.closest('.region-bounding-box')) return;
-    if (!imgRef.current || !scale) return;
+    if (!mediaRef.current || !scale) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = (e.clientX - rect.left) / scale;
     const clickY = (e.clientY - rect.top) / scale;
-    const naturalW = imgRef.current.naturalWidth || file.width || 1024;
-    const naturalH = imgRef.current.naturalHeight || file.height || 1024;
+    const naturalW = mediaRef.current.videoWidth || mediaRef.current.naturalWidth || file.width || 1024;
+    const naturalH = mediaRef.current.videoHeight || mediaRef.current.naturalHeight || file.height || 1024;
 
-    const newX = Math.max(0, Math.min(naturalW - region.size, Math.round(clickX - region.size / 2)));
-    const newY = Math.max(0, Math.min(naturalH - region.size, Math.round(clickY - region.size / 2)));
+    const newX = Math.max(0, Math.min(naturalW - boxW, Math.round(clickX - boxW / 2)));
+    const newY = Math.max(0, Math.min(naturalH - boxH, Math.round(clickY - boxH / 2)));
     setRegion((prev) => ({ ...prev, x: newX, y: newY }));
   };
 
   const handleResetAuto = () => {
-    const naturalW = imgRef.current?.naturalWidth || file.width || 1024;
-    const naturalH = imgRef.current?.naturalHeight || file.height || 1024;
+    const naturalW = mediaRef.current?.videoWidth || mediaRef.current?.naturalWidth || file.width || 1024;
+    const naturalH = mediaRef.current?.videoHeight || mediaRef.current?.naturalHeight || file.height || 1024;
     const s = file.detectedRegion?.logoSize || file.logoSize || 48;
-    const defX = file.detectedRegion?.x !== undefined ? file.detectedRegion.x : Math.max(0, naturalW - s - 16);
-    const defY = file.detectedRegion?.y !== undefined ? file.detectedRegion.y : Math.max(0, naturalH - s - 16);
+    const curBoxW = Math.round(s * boxAspectW);
+    const curBoxH = Math.round(s * boxAspectH);
+    const defX = file.detectedRegion?.x !== undefined ? file.detectedRegion.x : Math.max(0, naturalW - curBoxW - 16);
+    const defY = file.detectedRegion?.y !== undefined ? file.detectedRegion.y : Math.max(0, naturalH - curBoxH - 16);
     setRegion({
       x: defX,
       y: defY,
@@ -117,17 +133,21 @@ export default function ManualRegion({ file, onApply, onCancel }) {
   const displayBox = {
     left: region.x * scale,
     top: region.y * scale,
-    width: region.size * scale,
-    height: region.size * scale,
+    width: boxW * scale,
+    height: boxH * scale,
   };
 
   return (
     <div className="manual-region-wrapper">
       <div className="manual-region-toolbar">
         <div className="manual-region-meta">
-          <span className="badge badge-accent">Interactive Adjustment</span>
+          <span className="badge badge-accent">
+            {isVideo ? 'Dual-Star Video Region' : 'Interactive Adjustment'}
+          </span>
           <span className="manual-region-hint">
-            Click or drag the box to reposition the watermark region.
+            {isVideo
+              ? 'Drag the dual-star box over both Gemini stars. Auto-adjusted for video.'
+              : 'Click or drag the box to reposition the watermark region.'}
           </span>
         </div>
 
@@ -147,22 +167,34 @@ export default function ManualRegion({ file, onApply, onCancel }) {
           </div>
 
           <div className="mode-toggle">
-            <button
-              type="button"
-              className={`mode-btn ${mode === 'reverse-blend' ? 'active' : ''}`}
-              onClick={() => setMode('reverse-blend')}
-              title="Reverse Alpha Blend (Lossless for Gemini)"
-            >
-              Exact Blend
-            </button>
-            <button
-              type="button"
-              className={`mode-btn ${mode === 'inpaint' ? 'active' : ''}`}
-              onClick={() => setMode('inpaint')}
-              title="Seamless Diffusion Inpainting (Unknown watermarks)"
-            >
-              Inpaint
-            </button>
+            {isVideo ? (
+              <button
+                type="button"
+                className="mode-btn active"
+                title="Chroma-safe dual-star boundary inpainting (eliminates cyan/green YUV compression artifacts)"
+              >
+                Chroma-Safe Inpaint
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className={`mode-btn ${mode === 'reverse-blend' ? 'active' : ''}`}
+                  onClick={() => setMode('reverse-blend')}
+                  title="Reverse Alpha Blend (Lossless for Gemini)"
+                >
+                  Exact Blend
+                </button>
+                <button
+                  type="button"
+                  className={`mode-btn ${mode === 'inpaint' ? 'active' : ''}`}
+                  onClick={() => setMode('inpaint')}
+                  title="Seamless Diffusion Inpainting (Unknown watermarks)"
+                >
+                  Inpaint
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -173,14 +205,32 @@ export default function ManualRegion({ file, onApply, onCancel }) {
           onClick={handleStageClick}
           title="Click anywhere to reposition the watermark box"
         >
-          <img
-            ref={imgRef}
-            src={file.originalUrl}
-            alt="Original"
-            onLoad={updateScale}
-            draggable={false}
-            className="manual-region-image"
-          />
+          {isVideo ? (
+            <video
+              ref={mediaRef}
+              src={file.originalUrl}
+              onLoadedData={() => {
+                if (mediaRef.current) {
+                  mediaRef.current.currentTime = Math.min(1.0, (file.duration || 3) * 0.1);
+                }
+                updateScale();
+              }}
+              onSeeked={updateScale}
+              muted
+              playsInline
+              preload="auto"
+              className="manual-region-image"
+            />
+          ) : (
+            <img
+              ref={mediaRef}
+              src={file.originalUrl}
+              alt="Original"
+              onLoad={updateScale}
+              draggable={false}
+              className="manual-region-image"
+            />
+          )}
 
           {/* Draggable Precision Bounding Box */}
           <div
@@ -205,17 +255,51 @@ export default function ManualRegion({ file, onApply, onCancel }) {
             <div className="box-corner top-right" />
             <div className="box-corner bottom-left" />
             <div className="box-corner bottom-right" />
-            <div className="box-center-crosshair">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="5 9 2 12 5 15" />
-                <polyline points="9 5 12 2 15 5" />
-                <polyline points="15 19 12 22 9 19" />
-                <polyline points="19 9 22 12 19 15" />
-                <line x1="2" y1="12" x2="22" y2="12" />
-                <line x1="12" y1="2" x2="12" y2="22" />
+
+            {isVideo ? (
+              <svg
+                viewBox="0 0 165 125"
+                preserveAspectRatio="none"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  pointerEvents: 'none',
+                  opacity: 0.85,
+                }}
+              >
+                {/* Primary Star Astroid (Left) */}
+                <path
+                  d="M 66 9 C 66 38 41 62 13 62 C 41 62 66 86 66 115 C 66 86 91 62 119 62 C 91 62 66 38 66 9 Z"
+                  fill="rgba(245, 158, 11, 0.22)"
+                  stroke="#FBBF24"
+                  strokeWidth="1.5"
+                />
+                {/* Secondary Star Astroid (Lower-Right) */}
+                <path
+                  d="M 115 67 C 115 78 106 87 95 87 C 106 87 115 96 115 107 C 115 96 124 87 135 87 C 124 87 115 78 115 67 Z"
+                  fill="rgba(245, 158, 11, 0.22)"
+                  stroke="#FBBF24"
+                  strokeWidth="1.5"
+                />
               </svg>
-            </div>
-            <span className="box-tag">Watermark</span>
+            ) : (
+              <div className="box-center-crosshair">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="5 9 2 12 5 15" />
+                  <polyline points="9 5 12 2 15 5" />
+                  <polyline points="15 19 12 22 9 19" />
+                  <polyline points="19 9 22 12 19 15" />
+                  <line x1="2" y1="12" x2="22" y2="12" />
+                  <line x1="12" y1="2" x2="12" y2="22" />
+                </svg>
+              </div>
+            )}
+
+            <span className="box-tag">
+              {isVideo ? 'Dual-Star Video Watermark' : 'Watermark'}
+            </span>
           </div>
         </div>
       </div>
@@ -226,7 +310,9 @@ export default function ManualRegion({ file, onApply, onCancel }) {
           <span className="coord-sep">·</span>
           <span>Y: <strong>{region.y}px</strong></span>
           <span className="coord-sep">·</span>
-          <span>Dim: <strong>{region.size}×{region.size}px</strong></span>
+          <span>
+            Box: <strong>{boxW}×{boxH}px</strong> {isVideo ? '(Dual-Star)' : ''}
+          </span>
         </div>
 
         <div className="footer-actions">

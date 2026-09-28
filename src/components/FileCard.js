@@ -133,7 +133,7 @@ export default function FileCard({ file, index, onRemove, onRetry, onPreview, on
               </svg>
             </button>
           )}
-          {(isDone || isReview) && !file.isVideo && onAdjust && (
+          {(isDone || isReview) && onAdjust && (
             <button className="file-card-action-btn" onClick={(e) => { e.stopPropagation(); onAdjust(file); }} title="Adjust Watermark Region">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="3" width="18" height="18" rx="2" />

@@ -450,53 +450,62 @@ function App() {
 
       {previewFile && (
         <Modal onClose={() => setPreviewFile(null)} title={previewFile.name}>
-          {!previewFile.isVideo && (
-            <div className="modal-tabs-wrapper">
-              <div className="modal-tabs">
-                <button
-                  type="button"
-                  className={`modal-tab ${modalTab === 'slider' ? 'active' : ''}`}
-                  onClick={() => setModalTab('slider')}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="2" y="3" width="20" height="18" rx="2" />
-                    <line x1="12" y1="3" x2="12" y2="21" />
-                  </svg>
-                  Comparison Slider
-                </button>
-                <button
-                  type="button"
-                  className={`modal-tab ${modalTab === 'adjust' ? 'active' : ''}`}
-                  onClick={() => setModalTab('adjust')}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M6 2v4M18 2v4M2 6h4M2 18h4M22 6h-4M22 18h-4M6 22v-4M18 22v-4"/>
-                    <rect x="6" y="6" width="12" height="12" rx="2" />
-                  </svg>
-                  Adjust Watermark Region
-                </button>
-              </div>
-
-              {previewFile.confidence !== null && previewFile.confidence !== undefined && (
-                <div className="modal-tabs-meta">
-                  <span className={`badge ${previewFile.confidence >= 0.45 ? 'badge-success' : 'badge-warning'}`}>
-                    ★ Confidence: {Math.round(previewFile.confidence * 100)}%
-                  </span>
-                </div>
-              )}
+          <div className="modal-tabs-wrapper">
+            <div className="modal-tabs">
+              <button
+                type="button"
+                className={`modal-tab ${modalTab === 'slider' ? 'active' : ''}`}
+                onClick={() => setModalTab('slider')}
+              >
+                {previewFile.isVideo ? (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polygon points="5 3 19 12 5 21"/>
+                    </svg>
+                    Video Player
+                  </>
+                ) : (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="2" y="3" width="20" height="18" rx="2" />
+                      <line x1="12" y1="3" x2="12" y2="21" />
+                    </svg>
+                    Comparison Slider
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                className={`modal-tab ${modalTab === 'adjust' ? 'active' : ''}`}
+                onClick={() => setModalTab('adjust')}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 2v4M18 2v4M2 6h4M2 18h4M22 6h-4M22 18h-4M6 22v-4M18 22v-4"/>
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+                {previewFile.isVideo ? 'Adjust Dual-Star Region' : 'Adjust Watermark Region'}
+              </button>
             </div>
-          )}
 
-          {previewFile.isVideo ? (
-            <VideoPreview
-              originalUrl={previewFile.originalUrl}
-              resultUrl={previewFile.resultUrl}
-            />
-          ) : modalTab === 'adjust' ? (
+            {previewFile.confidence !== null && previewFile.confidence !== undefined && (
+              <div className="modal-tabs-meta">
+                <span className={`badge ${previewFile.confidence >= 0.45 ? 'badge-success' : 'badge-warning'}`}>
+                  ★ Confidence: {Math.round(previewFile.confidence * 100)}%
+                </span>
+              </div>
+            )}
+          </div>
+
+          {modalTab === 'adjust' ? (
             <ManualRegion
               file={previewFile}
               onApply={handleApplyCustomRegion}
               onCancel={() => setModalTab('slider')}
+            />
+          ) : previewFile.isVideo ? (
+            <VideoPreview
+              originalUrl={previewFile.originalUrl}
+              resultUrl={previewFile.resultUrl}
             />
           ) : (
             <BeforeAfter
@@ -517,18 +526,16 @@ function App() {
                 )}
               </div>
               <div className="modal-footer-actions">
-                {!previewFile.isVideo && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => setModalTab('adjust')}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polygon points="14 2 18 6 7 17 3 17 3 13 14 2" />
-                    </svg>
-                    Adjust Region
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setModalTab('adjust')}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="14 2 18 6 7 17 3 17 3 13 14 2" />
+                  </svg>
+                  Adjust Region
+                </button>
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
