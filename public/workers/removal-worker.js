@@ -63,6 +63,27 @@ self.onmessage = function (e) {
         }
       }
 
+      const smoothFeather = new Float32Array(pw * ph);
+      const feather = new Float32Array(pw * ph);
+      for (let i = 0; i < pw * ph; i++) {
+        if (mask[i] === 1) feather[i] = 1.0;
+        else if (dilMask[i] === 1) feather[i] = 0.65;
+      }
+      for (let y = 1; y < ph - 1; y++) {
+        for (let x = 1; x < pw - 1; x++) {
+          const idx = y * pw + x;
+          if (dilMask[idx] === 1) {
+            let sum = 0;
+            for (let dy = -1; dy <= 1; dy++) {
+              for (let dx = -1; dx <= 1; dx++) {
+                sum += feather[(y + dy) * pw + (x + dx)];
+              }
+            }
+            smoothFeather[idx] = Math.min(1.0, Math.max(0.18, sum / 9.0));
+          }
+        }
+      }
+
       const maskedPixels = [];
       const boundaryPixels = [];
       for (let y = 1; y < ph - 1; y++) {
@@ -165,9 +186,18 @@ self.onmessage = function (e) {
           const nG = fastRand() * grainG;
           const nB = fastRand() * grainB;
 
-          data[pIdx] = Math.max(0, Math.min(255, Math.round(patchR[idx] + nR)));
-          data[pIdx + 1] = Math.max(0, Math.min(255, Math.round(patchG[idx] + nG)));
-          data[pIdx + 2] = Math.max(0, Math.min(255, Math.round(patchB[idx] + nB)));
+          const origR = data[pIdx];
+          const origG = data[pIdx + 1];
+          const origB = data[pIdx + 2];
+
+          const inpR = Math.max(0, Math.min(255, patchR[idx] + nR));
+          const inpG = Math.max(0, Math.min(255, patchG[idx] + nG));
+          const inpB = Math.max(0, Math.min(255, patchB[idx] + nB));
+
+          const w = smoothFeather[idx] || 1.0;
+          data[pIdx] = Math.round(origR * (1.0 - w) + inpR * w);
+          data[pIdx + 1] = Math.round(origG * (1.0 - w) + inpG * w);
+          data[pIdx + 2] = Math.round(origB * (1.0 - w) + inpB * w);
         }
       }
     }

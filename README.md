@@ -3,22 +3,25 @@
 a quiet, private utility to remove google gemini and veo watermarks from images and video sequences.
 
 ## what it is
-a lightweight, zero-upload tool for cleaning watermark overlays and sparkles from ai-generated media. it performs mathematical inverse alpha blending purely in your browser memory for images, and drives a high-speed calibrated ffmpeg unblend pipeline for video sequences.
+a zero-upload tool for cleaning watermark overlays and sparkles from ai-generated media. images run 100% client-side in your browser memory on static hosting. video studio drives a local calibrated ffmpeg unblend pipeline for high-fps multi-scene sequences.
 
-## why
-ai tools like gemini and veo stamp translucent star watermarks across outputs. classic inpainting blurs grass, foliage, and character details into smudges. this tool solves the inverse blend equation b = (f - c)/m to restore original textures without ghosting or quality loss.
+live web app: https://harik90.github.io/Gemini_WatermarkHider/
 
-Live - https://harik90.github.io/Gemini_WatermarkHider/
+## architecture
+- **images (static hosting)**: runs entirely in your browser via html5 canvas and web workers. zero server, zero uploads, zero backend required.
+- **video studio (local engine)**: multi-scene sorting and calibrated crf video export requires the local python daemon running on `http://localhost:8000`.
 
-## run
+## run locally
 ```bash
-# install dependencies
+# 1. install dependencies (ensure ffmpeg is on your system PATH)
 npm install
 pip install -r requirements.txt
 
-# start frontend & backend
+# 2. start video studio backend daemon (FastAPI on :8000)
+npm run server
+
+# 3. start frontend (optional if using GitHub Pages)
 npm run dev
-python -m uvicorn server:app --reload --port 8000
 ```
 
-open `http://localhost:3000` in your browser.
+open `http://localhost:3000` or use the live GitHub Pages site with your local backend.

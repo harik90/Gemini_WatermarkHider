@@ -123,7 +123,7 @@ export function detectWatermark(imageData, width, height, options = {}) {
     };
   }
 
-  // Fallback: check bottom-left
+  // Fallback 1: check bottom-left
   const blResult = searchCorner(imageData, hpLuma, width, height, 'bottom-left', candidateSizes);
   if (blResult.confidence > brResult.confidence && blResult.confidence >= CONFIDENCE_THRESHOLD) {
     return {
@@ -137,9 +137,43 @@ export function detectWatermark(imageData, width, height, options = {}) {
     };
   }
 
-  // Fallback to highest confidence candidate if > 0.22, else standard position
+  // Fallback 2: check top-right and top-left corners if not found in bottom
+  const trResult = searchCorner(imageData, hpLuma, width, height, 'top-right', candidateSizes);
+  if (trResult.confidence >= CONFIDENCE_THRESHOLD && trResult.confidence > blResult.confidence && trResult.confidence > brResult.confidence) {
+    return {
+      detected: true,
+      confidence: trResult.confidence,
+      x: trResult.x,
+      y: trResult.y,
+      logoSize: trResult.logoSize,
+      corner: 'top-right',
+      variant: `${width}x${height}`,
+    };
+  }
+
+  const tlResult = searchCorner(imageData, hpLuma, width, height, 'top-left', candidateSizes);
+  if (tlResult.confidence >= CONFIDENCE_THRESHOLD && tlResult.confidence > trResult.confidence && tlResult.confidence > blResult.confidence && tlResult.confidence > brResult.confidence) {
+    return {
+      detected: true,
+      confidence: tlResult.confidence,
+      x: tlResult.x,
+      y: tlResult.y,
+      logoSize: tlResult.logoSize,
+      corner: 'top-left',
+      variant: `${width}x${height}`,
+    };
+  }
+
+  // Fallback to highest confidence candidate among all corners if > 0.22, else standard bottom-right
   const defaultPos = getDefaultPosition(width, height, preferredSize);
-  const bestResult = brResult.confidence >= blResult.confidence ? brResult : blResult;
+  const candidates = [brResult, blResult, trResult, tlResult];
+  let bestResult = brResult;
+  for (let i = 1; i < candidates.length; i++) {
+    if (candidates[i].confidence > bestResult.confidence) {
+      bestResult = candidates[i];
+    }
+  }
+
   const bestX = bestResult.confidence >= 0.22 ? bestResult.x : defaultPos.x;
   const bestY = bestResult.confidence >= 0.22 ? bestResult.y : defaultPos.y;
   const bestSize = bestResult.confidence >= 0.22 ? bestResult.logoSize : preferredSize;
@@ -150,7 +184,7 @@ export function detectWatermark(imageData, width, height, options = {}) {
     x: bestX,
     y: bestY,
     logoSize: bestSize,
-    corner: 'bottom-right',
+    corner: bestResult.corner || 'bottom-right',
     variant: `${width}x${height}`,
   };
 }
@@ -180,6 +214,16 @@ function searchCorner(imageData, hpLuma, imgW, imgH, corner, candidateSizes) {
       maxX = Math.min(imgW - size, searchMarginX - size);
       minY = Math.max(0, imgH - searchMarginY);
       maxY = Math.max(0, imgH - size);
+    } else if (corner === 'top-right') {
+      minX = Math.max(0, imgW - searchMarginX);
+      maxX = Math.max(0, imgW - size);
+      minY = 0;
+      maxY = Math.min(imgH - size, searchMarginY - size);
+    } else if (corner === 'top-left') {
+      minX = 0;
+      maxX = Math.min(imgW - size, searchMarginX - size);
+      minY = 0;
+      maxY = Math.min(imgH - size, searchMarginY - size);
     } else {
       continue;
     }
@@ -235,6 +279,7 @@ function searchCorner(imageData, hpLuma, imgW, imgH, corner, candidateSizes) {
         x: fineBestX,
         y: fineBestY,
         logoSize: size,
+        corner,
       };
     }
   }

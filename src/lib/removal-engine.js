@@ -101,7 +101,29 @@ export function removeWatermark(imageData, width, height, options = {}) {
     }
   }
 
-  // 3. Collect masked pixels and boundary ring
+  // 3. Compute continuous boundary feather weight for seamless pixel-to-pixel blending
+  const feather = new Float32Array(pw * ph);
+  for (let i = 0; i < pw * ph; i++) {
+    if (mask[i] === 1) feather[i] = 1.0;
+    else if (dilMask[i] === 1) feather[i] = 0.65;
+  }
+  const smoothFeather = new Float32Array(pw * ph);
+  for (let y = 1; y < ph - 1; y++) {
+    for (let x = 1; x < pw - 1; x++) {
+      const idx = y * pw + x;
+      if (dilMask[idx] === 1) {
+        let sum = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            sum += feather[(y + dy) * pw + (x + dx)];
+          }
+        }
+        smoothFeather[idx] = Math.min(1.0, Math.max(0.18, sum / 9.0));
+      }
+    }
+  }
+
+  // 4. Collect masked pixels and boundary ring
   const maskedPixels = [];
   const boundaryPixels = [];
   for (let y = 1; y < ph - 1; y++) {
@@ -122,7 +144,7 @@ export function removeWatermark(imageData, width, height, options = {}) {
 
   if (maskedPixels.length === 0 || boundaryPixels.length === 0) return imageData;
 
-  // 4. Initial seed via distance-weighted boundary interpolation
+  // 5. Initial seed via distance-weighted boundary interpolation
   const numBound = boundaryPixels.length;
   const step = Math.max(1, Math.floor(numBound / 32));
   const sampledBound = [];
@@ -214,7 +236,7 @@ export function removeWatermark(imageData, width, height, options = {}) {
     return (seed / 2147483647) * 2 - 1;
   }
 
-  // 7. Write back into original ImageData buffer with micro-texture
+  // 7. Write back into original ImageData buffer with micro-texture and pixel-to-pixel feathering
   for (let i = 0; i < maskedPixels.length; i++) {
     const mp = maskedPixels[i];
     const idx = mp.idx;
@@ -224,9 +246,18 @@ export function removeWatermark(imageData, width, height, options = {}) {
     const noiseG = fastRand() * grainG;
     const noiseB = fastRand() * grainB;
 
-    data[pIdx] = Math.max(0, Math.min(255, Math.round(patchR[idx] + noiseR)));
-    data[pIdx + 1] = Math.max(0, Math.min(255, Math.round(patchG[idx] + noiseG)));
-    data[pIdx + 2] = Math.max(0, Math.min(255, Math.round(patchB[idx] + noiseB)));
+    const origR = data[pIdx];
+    const origG = data[pIdx + 1];
+    const origB = data[pIdx + 2];
+
+    const inpR = Math.max(0, Math.min(255, patchR[idx] + noiseR));
+    const inpG = Math.max(0, Math.min(255, patchG[idx] + noiseG));
+    const inpB = Math.max(0, Math.min(255, patchB[idx] + noiseB));
+
+    const w = smoothFeather[idx] || 1.0;
+    data[pIdx] = Math.round(origR * (1.0 - w) + inpR * w);
+    data[pIdx + 1] = Math.round(origG * (1.0 - w) + inpG * w);
+    data[pIdx + 2] = Math.round(origB * (1.0 - w) + inpB * w);
   }
 
   return imageData;

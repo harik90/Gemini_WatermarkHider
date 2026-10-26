@@ -371,7 +371,7 @@ function App() {
                 </div>
               </div>
 
-              <EditVideoPanel onAddToast={addToast} />
+              <EditVideoPanel onAddToast={addToast} onSelectMode={setMode} />
             </div>
           </section>
         ) : !hasFiles ? (

@@ -39,6 +39,7 @@ class AstroidWatermarkRemover:
         self._cached_dims = None
         self._cached_roi = None
         self._cached_patch_mask = None
+        self._cached_feather_mask = None
 
     def calculate_roi(self, width: int, height: int) -> Tuple[int, int, int, int]:
         """Calculates pixel coordinates (x1, y1, x2, y2) constrained to even dimensions."""
@@ -100,11 +101,14 @@ class AstroidWatermarkRemover:
         self._cached_dims = (w, h)
         self._cached_roi = (x1, y1, x2, y2)
         self._cached_patch_mask = patch_mask
+        # Continuous Gaussian feather mask for seamless pixel-to-pixel blending
+        soft = cv2.GaussianBlur(patch_mask.astype(np.float32) / 255.0, (5, 5), 1.2)
+        self._cached_feather_mask = np.clip(soft * 1.15, 0.0, 1.0)[:, :, np.newaxis]
 
     def inpaint_frame(self, frame: np.ndarray) -> np.ndarray:
         """
         Removes both primary and secondary watermark stars using PDE Navier-Stokes
-        or Fast Marching inpainting on the active corner patch at 600+ FPS.
+        or Fast Marching inpainting with sub-pixel boundary feathering at 600+ FPS.
         """
         h, w = frame.shape[:2]
         if self._cached_dims != (w, h):
@@ -115,7 +119,12 @@ class AstroidWatermarkRemover:
 
         flags = cv2.INPAINT_TELEA if self.method == "telea" else cv2.INPAINT_NS
         clean_patch = cv2.inpaint(patch, self._cached_patch_mask, self.radius, flags)
-        frame[y1:y2, x1:x2] = clean_patch
+
+        if self._cached_feather_mask is not None:
+            blended = (patch.astype(np.float32) * (1.0 - self._cached_feather_mask) + clean_patch.astype(np.float32) * self._cached_feather_mask).astype(np.uint8)
+            frame[y1:y2, x1:x2] = blended
+        else:
+            frame[y1:y2, x1:x2] = clean_patch
 
         return frame
 

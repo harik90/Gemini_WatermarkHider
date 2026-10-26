@@ -4,13 +4,15 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 
 const PLAYBACK_SPEEDS = [0.25, 0.5, 1, 1.5, 2];
 
-export default function EditVideoPanel({ onAddToast }) {
+export default function EditVideoPanel({ onAddToast, onSelectMode }) {
   const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
   const [scenes, setScenes] = useState([]);
   const [selectedSceneIndex, setSelectedSceneIndex] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
   const [serverOnline, setServerOnline] = useState(false);
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
+  const [copiedCommand, setCopiedCommand] = useState('');
   const [masterReady, setMasterReady] = useState(false);
   const [viewMode, setViewMode] = useState('clip'); // 'clip' | 'master'
 
@@ -49,6 +51,16 @@ export default function EditVideoPanel({ onAddToast }) {
       document.removeEventListener('webkitfullscreenchange', handleFSChange);
     };
   }, []);
+
+  // Copy command helper for setup guide
+  const handleCopyCommand = useCallback((cmd, label) => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(cmd).catch(() => {});
+      setCopiedCommand(label);
+      onAddToast?.(`Copied to clipboard: ${cmd}`, 'success');
+      setTimeout(() => setCopiedCommand(''), 2500);
+    }
+  }, [onAddToast]);
 
   // Health check polling
   useEffect(() => {
@@ -541,6 +553,116 @@ export default function EditVideoPanel({ onAddToast }) {
           </button>
         </div>
       </div>
+
+      {/* ── Offline Daemon Setup Notice & Interactive Guide ── */}
+      {!serverOnline && (
+        <div className="daemon-warning-banner" role="alert">
+          <div className="daemon-warning-main">
+            <div className="daemon-warning-icon-box">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </div>
+            <div className="daemon-warning-copy">
+              <div className="daemon-warning-headline">
+                <strong>Local Video Studio Engine Offline</strong>
+                <span className="daemon-checking-pill">
+                  <span className="live-dot" />
+                  <span>Polling localhost:8000</span>
+                </span>
+              </div>
+              <p className="daemon-warning-desc">
+                Images & client-side video processing run 100% in your browser. Video Studio uses a high-performance local Python/FFmpeg daemon for CFR multi-scene concatenation and precision CRF exports.
+              </p>
+            </div>
+            <div className="daemon-warning-actions">
+              <button
+                type="button"
+                className="daemon-guide-toggle-btn"
+                onClick={() => setShowSetupGuide((v) => !v)}
+              >
+                <span>{showSetupGuide ? 'Hide Setup Guide' : 'Setup Guide'}</span>
+                <span className="daemon-guide-arrow">{showSetupGuide ? '↑' : '↓'}</span>
+              </button>
+              {onSelectMode && (
+                <button
+                  type="button"
+                  className="daemon-switch-mode-btn"
+                  onClick={() => onSelectMode('images')}
+                >
+                  <span>Switch to Images</span>
+                  <span className="daemon-tag">100% In-Browser</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {showSetupGuide && (
+            <div className="daemon-guide-drawer">
+              <div className="daemon-guide-header">
+                <span className="daemon-step-count">3-Step Local Setup</span>
+                <span className="daemon-guide-sub">Run locally in your terminal to enable Video Studio</span>
+              </div>
+              <div className="daemon-steps-grid">
+                <div className="daemon-step-card">
+                  <div className="step-num">01.</div>
+                  <div className="step-content">
+                    <div className="step-title">Clone Repository</div>
+                    <div className="code-row">
+                      <code>git clone https://github.com/harik90/Gemini_WatermarkHider.git</code>
+                      <button
+                        type="button"
+                        className="copy-chip"
+                        onClick={() => handleCopyCommand('git clone https://github.com/harik90/Gemini_WatermarkHider.git', 'clone')}
+                      >
+                        {copiedCommand === 'clone' ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="daemon-step-card">
+                  <div className="step-num">02.</div>
+                  <div className="step-content">
+                    <div className="step-title">Install Python Requirements</div>
+                    <div className="code-row">
+                      <code>pip install -r requirements.txt</code>
+                      <button
+                        type="button"
+                        className="copy-chip"
+                        onClick={() => handleCopyCommand('pip install -r requirements.txt', 'pip')}
+                      >
+                        {copiedCommand === 'pip' ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                    <span className="step-hint">Requires Python 3.10+ and FFmpeg on system PATH</span>
+                  </div>
+                </div>
+
+                <div className="daemon-step-card">
+                  <div className="step-num">03.</div>
+                  <div className="step-content">
+                    <div className="step-title">Start Video Engine Daemon</div>
+                    <div className="code-row">
+                      <code>npm run server</code>
+                      <button
+                        type="button"
+                        className="copy-chip"
+                        onClick={() => handleCopyCommand('npm run server', 'run')}
+                      >
+                        {copiedCommand === 'run' ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                    <span className="step-hint">Runs FastAPI on port 8000; this page connects automatically</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Main Workspace: 2 Pure Columns (Clips List + Video Monitor) ── */}
       <div className="editor-main-grid clean-layout">
