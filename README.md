@@ -8,6 +8,8 @@ a lightweight, zero-upload tool for cleaning watermark overlays and sparkles fro
 ## why
 ai tools like gemini and veo stamp translucent star watermarks across outputs. classic inpainting blurs grass, foliage, and character details into smudges. this tool solves the inverse blend equation b = (f - c)/m to restore original textures without ghosting or quality loss.
 
+Live - https://harik90.github.io/Gemini_WatermarkHider/
+
 ## run
 ```bash
 # install dependencies
