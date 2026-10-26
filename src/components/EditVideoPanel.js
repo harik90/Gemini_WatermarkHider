@@ -27,12 +27,28 @@ export default function EditVideoPanel({ onAddToast }) {
   const [isMuted, setIsMuted] = useState(false);
   const [isLooping, setIsLooping] = useState(true);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const videoRef = useRef(null);
+  const videoWrapperRef = useRef(null);
   const fileInputRef = useRef(null);
   const savedTimeRef = useRef(0);
   const draggedClipIndexRef = useRef(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
+
+  // Fullscreen change listener
+  useEffect(() => {
+    const handleFSChange = () => {
+      const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+      setIsFullscreen(!!fsEl);
+    };
+    document.addEventListener('fullscreenchange', handleFSChange);
+    document.addEventListener('webkitfullscreenchange', handleFSChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFSChange);
+      document.removeEventListener('webkitfullscreenchange', handleFSChange);
+    };
+  }, []);
 
   // Health check polling
   useEffect(() => {
@@ -252,11 +268,12 @@ export default function EditVideoPanel({ onAddToast }) {
   // Start watermark removal & master render
   const handleStartRender = async () => {
     if (scenes.length === 0) {
-      onAddToast?.('Please add video clips first', 'warning');
+      onAddToast?.('Please add video clips first to export', 'warning');
+      fileInputRef.current?.click();
       return;
     }
     if (!serverOnline) {
-      onAddToast?.('FastAPI backend is offline. Run "npm run server"', 'error');
+      onAddToast?.('Local Python daemon is offline. Run "npm run server" on your workstation', 'error');
       return;
     }
 
@@ -362,13 +379,34 @@ export default function EditVideoPanel({ onAddToast }) {
     }
   }, [duration]);
 
-  // Keyboard shortcuts: Space (Play/Pause), L (Loop), ArrowLeft/ArrowRight (-5s/+5s), M (Mute)
+  const handleToggleFullscreen = useCallback(() => {
+    const wrapper = videoWrapperRef.current;
+    if (!wrapper) return;
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      if (wrapper.requestFullscreen) {
+        wrapper.requestFullscreen().catch(() => {});
+      } else if (wrapper.webkitRequestFullscreen) {
+        wrapper.webkitRequestFullscreen();
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+      }
+    }
+  }, []);
+
+  // Keyboard shortcuts: Space (Play/Pause), L (Loop), ArrowLeft/ArrowRight (-5s/+5s), M (Mute), F (Fullscreen)
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
       if (e.code === 'Space') {
         e.preventDefault();
         togglePlay();
+      } else if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        handleToggleFullscreen();
       } else if (e.key === 'l' || e.key === 'L') {
         e.preventDefault();
         handleToggleLoop();
@@ -385,7 +423,7 @@ export default function EditVideoPanel({ onAddToast }) {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [togglePlay, handleToggleLoop, handleSeek, currentTime]);
+  }, [togglePlay, handleToggleFullscreen, handleToggleLoop, handleSeek, currentTime]);
 
   const handleTimeUpdate = () => {
     if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
@@ -482,15 +520,24 @@ export default function EditVideoPanel({ onAddToast }) {
 
           <button
             type="button"
-            className="editor-btn btn-primary btn-render-main"
+            className={`editor-btn btn-primary btn-render-main ${scenes.length === 0 ? 'btn-unready' : ''}`}
             onClick={handleStartRender}
-            disabled={scenes.length === 0 || !serverOnline || jobStatus === 'processing'}
-            title="Remove watermark pixel-by-pixel and merge into one clean master"
+            disabled={jobStatus === 'processing'}
+            title={scenes.length === 0 ? "Click to import clips and begin master export" : "Remove watermark pixel-by-pixel and merge into one clean master"}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <polygon points="5 3 19 12 5 21 5 3"/>
-            </svg>
-            <span>Execute Master Export →</span>
+            {jobStatus === 'processing' ? (
+              <>
+                <span className="loading-spinner-sm" />
+                <span>Exporting ({Math.round(jobProgress)}%)...</span>
+              </>
+            ) : (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                <span>Execute Master Export →</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -639,7 +686,7 @@ export default function EditVideoPanel({ onAddToast }) {
         <div className="editor-panel video-monitor">
           <div className="monitor-viewport">
             {currentVideoSrc ? (
-              <div className="video-wrapper">
+              <div className="video-wrapper" ref={videoWrapperRef}>
                 <video
                   ref={videoRef}
                   src={currentVideoSrc}
@@ -649,6 +696,7 @@ export default function EditVideoPanel({ onAddToast }) {
                   onTimeUpdate={handleTimeUpdate}
                   onLoadedMetadata={handleLoadedMetadata}
                   onError={(e) => console.warn('Stream preview note:', e)}
+                  onDoubleClick={handleToggleFullscreen}
                   onEnded={() => {
                     if (isLooping && videoRef.current) {
                       videoRef.current.currentTime = 0;
@@ -722,8 +770,32 @@ export default function EditVideoPanel({ onAddToast }) {
                     </button>
                   </div>
 
-                  <div className="monitor-res-indicator">
+                  <div className="monitor-res-indicator" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                     <span>{viewMode === 'master' ? '1080p Master (Clean)' : (activeScene?.resolution || '1080p')}</span>
+                    <button
+                      type="button"
+                      className="monitor-badge fullscreen-toggle-badge"
+                      onClick={handleToggleFullscreen}
+                      title={isFullscreen ? 'Exit Fullscreen (F)' : 'Enter Fullscreen (F)'}
+                      aria-label="Toggle Fullscreen"
+                    >
+                      {isFullscreen ? (
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="badge-icon">
+                          <polyline points="4 14 10 14 10 20" />
+                          <polyline points="20 10 14 10 14 4" />
+                          <line x1="14" y1="10" x2="21" y2="3" />
+                          <line x1="3" y1="21" x2="10" y2="14" />
+                        </svg>
+                      ) : (
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="badge-icon">
+                          <polyline points="15 3 21 3 21 9" />
+                          <polyline points="9 21 3 21 3 15" />
+                          <line x1="21" y1="3" x2="14" y2="10" />
+                          <line x1="3" y1="21" x2="10" y2="14" />
+                        </svg>
+                      )}
+                      <span>{isFullscreen ? 'Exit' : 'Full'}</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -875,6 +947,30 @@ export default function EditVideoPanel({ onAddToast }) {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
                     <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                  </svg>
+                )}
+              </button>
+
+              <button
+                type="button"
+                className={`transport-btn ${isFullscreen ? 'active-fullscreen' : ''}`}
+                onClick={handleToggleFullscreen}
+                title={isFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen (F)'}
+                aria-label="Toggle Fullscreen"
+              >
+                {isFullscreen ? (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="4 14 10 14 10 20" />
+                    <polyline points="20 10 14 10 14 4" />
+                    <line x1="14" y1="10" x2="21" y2="3" />
+                    <line x1="3" y1="21" x2="10" y2="14" />
+                  </svg>
+                ) : (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="15 3 21 3 21 9" />
+                    <polyline points="9 21 3 21 3 15" />
+                    <line x1="21" y1="3" x2="14" y2="10" />
+                    <line x1="3" y1="21" x2="10" y2="14" />
                   </svg>
                 )}
               </button>

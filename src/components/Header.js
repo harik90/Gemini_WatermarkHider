@@ -72,11 +72,11 @@ export default function Header({ onSelectMode, currentMode = 'images' }) {
   }, []);
 
   const formatStars = (count) => {
-    if (count == null) return '1 Star';
+    if (count == null) return <><span>1</span> <span className="stars-label">Star</span></>;
     if (count >= 1000) {
-      return `${(count / 1000).toFixed(1).replace(/\.0$/, '')}k Stars`;
+      return <><span>{(count / 1000).toFixed(1).replace(/\.0$/, '')}k</span> <span className="stars-label">Stars</span></>;
     }
-    return `${count} ${count === 1 ? 'Star' : 'Stars'}`;
+    return <><span>{count}</span> <span className="stars-label">{count === 1 ? 'Star' : 'Stars'}</span></>;
   };
 
   const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
@@ -97,7 +97,8 @@ export default function Header({ onSelectMode, currentMode = 'images' }) {
               />
             </div>
             <div className="brand-group">
-              <span className="brand-title">Gemini Cleaner · Veo Studio</span>
+              <span className="brand-title">Gemini Cleaner</span>
+              <span className="brand-title-sub">· Veo Studio</span>
               <span className="brand-slash">/</span>
               <span className="brand-mode-badge">{currentMode === 'images' ? 'Images' : 'Video Studio'}</span>
             </div>
