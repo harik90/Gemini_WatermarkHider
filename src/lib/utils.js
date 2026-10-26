@@ -27,6 +27,13 @@ export function isAccepted(file) {
   return isImage(file) || isVideo(file) || isZip(file);
 }
 
+export function isAcceptedForMode(file, mode = 'images') {
+  if (mode === 'videos') {
+    return isVideo(file);
+  }
+  return isImage(file) || isZip(file);
+}
+
 export function formatFileSize(bytes) {
   if (!bytes || bytes <= 0) return '0 B';
   if (bytes < 1024) return `${bytes} B`;
@@ -38,8 +45,11 @@ export function generateId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-export function getAcceptString() {
-  return [...ACCEPTED_IMAGE_TYPES, ...ACCEPTED_VIDEO_TYPES, '.mov', '.zip'].join(',');
+export function getAcceptString(mode = 'images') {
+  if (mode === 'videos') {
+    return [...ACCEPTED_VIDEO_TYPES, '.mov', '.mkv'].join(',');
+  }
+  return [...ACCEPTED_IMAGE_TYPES, '.zip'].join(',');
 }
 
 export function formatDuration(seconds) {

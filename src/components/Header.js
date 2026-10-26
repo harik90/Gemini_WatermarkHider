@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useTheme } from '@/hooks/useTheme';
 
-export default function Header({ onSelectMode }) {
+export default function Header({ onSelectMode, currentMode = 'images' }) {
   const { theme, toggle } = useTheme();
-  const [toolsOpen, setToolsOpen] = useState(false);
   const [stars, setStars] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -18,17 +17,6 @@ export default function Header({ onSelectMode }) {
     }
     return 1;
   });
-  const toolsRef = useRef(null);
-
-  useEffect(() => {
-    function handleClickOutside(e) {
-      if (toolsRef.current && !toolsRef.current.contains(e.target)) {
-        setToolsOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   // Fetch real-time GitHub stars with fallback and polling
   useEffect(() => {
@@ -36,7 +24,6 @@ export default function Header({ onSelectMode }) {
 
     async function fetchStars() {
       try {
-        // 1. Try official GitHub API with cache-buster
         const res = await fetch(`https://api.github.com/repos/harik90/Gemini_WatermarkHider?_t=${Date.now()}`, {
           cache: 'no-store',
           headers: { Accept: 'application/vnd.github.v3+json' },
@@ -49,12 +36,9 @@ export default function Header({ onSelectMode }) {
             return;
           }
         }
-      } catch {
-        // Fallback below
-      }
+      } catch {}
 
       try {
-        // 2. Fallback to shields.io JSON (unmetered, no rate limits)
         const shieldRes = await fetch(`https://img.shields.io/github/stars/harik90/Gemini_WatermarkHider.json?_t=${Date.now()}`, {
           cache: 'no-store',
         });
@@ -66,18 +50,11 @@ export default function Header({ onSelectMode }) {
             try { localStorage.setItem('gh_stars_harik90', String(parsed)); } catch {}
           }
         }
-      } catch {
-        // Keep current stars state
-      }
+      } catch {}
     }
 
-    // Initial fetch
     fetchStars();
-
-    // Realtime polling every 20 seconds
     const interval = setInterval(fetchStars, 20000);
-
-    // Refresh immediately when user returns to this tab from GitHub
     const handleFocus = () => fetchStars();
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') fetchStars();
@@ -107,91 +84,49 @@ export default function Header({ onSelectMode }) {
   return (
     <header className="header">
       <div className="header-inner">
-        {/* Left branding & navigation */}
+        {/* Left: Brand Logo & Title */}
         <div className="header-left">
-          <a href={basePath || '/'} className="header-logo" aria-label="Hide Gemini Watermark Homepage">
-            <svg className="gemini-star-icon" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 0C12 6.627 6.627 12 0 12c6.627 0 12 5.373 12 12 0-6.627 5.373-12 12-12-6.627 0-12-5.373-12-12z" />
-            </svg>
-            <span className="logo-text">Hide Gemini Watermark</span>
+          <a href={basePath || '/'} className="header-logo" aria-label="Gemini Watermark Cleaner">
+            <div className="vercel-logo-icon">
+              <img
+                src={`${basePath}/app-icon.png`}
+                alt="Logo"
+                width={22}
+                height={22}
+                className="brand-logo-img"
+              />
+            </div>
+            <div className="brand-group">
+              <span className="brand-title">Gemini Cleaner · Veo Studio</span>
+              <span className="brand-slash">/</span>
+              <span className="brand-mode-badge">{currentMode === 'images' ? 'Images' : 'Video Studio'}</span>
+            </div>
           </a>
 
+          {/* Section Anchors */}
           <nav className="header-main-nav">
-            <div className="tools-dropdown-container" ref={toolsRef}>
-              <button
-                type="button"
-                className={`nav-link tools-btn ${toolsOpen ? 'active' : ''}`}
-                onClick={() => setToolsOpen((prev) => !prev)}
-                aria-expanded={toolsOpen}
-              >
-                Tools
-                <svg className={`chevron ${toolsOpen ? 'open' : ''}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-              </button>
-
-              {toolsOpen && (
-                <div className="tools-dropdown-menu">
-                  <button
-                    type="button"
-                    className="tools-dropdown-item"
-                    onClick={() => {
-                      onSelectMode?.('images');
-                      setToolsOpen(false);
-                    }}
-                  >
-                    <span className="item-icon">🖼</span>
-                    <div>
-                      <div className="item-title">Gemini Image Remover</div>
-                      <div className="item-desc">Remove star overlays & alpha watermark</div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    className="tools-dropdown-item"
-                    onClick={() => {
-                      onSelectMode?.('videos');
-                      setToolsOpen(false);
-                    }}
-                  >
-                    <span className="item-icon">🎬</span>
-                    <div>
-                      <div className="item-title">Gemini Video Remover</div>
-                      <div className="item-desc">Process video frames client-side</div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    className="tools-dropdown-item"
-                    onClick={() => {
-                      onSelectMode?.('images');
-                      setToolsOpen(false);
-                    }}
-                  >
-                    <span className="item-icon">⚡</span>
-                    <div>
-                      <div className="item-title">Batch Folder & .ZIP Mode</div>
-                      <div className="item-desc">Drag entire archives for multi-file processing</div>
-                    </div>
-                  </button>
-                </div>
-              )}
-            </div>
+            <button
+              type="button"
+              className={`nav-link ${currentMode === 'images' ? 'active' : ''}`}
+              onClick={() => onSelectMode?.('images')}
+            >
+              <span>Images</span>
+            </button>
 
             <button
               type="button"
-              className="nav-link video-remover-link"
+              className={`nav-link ${currentMode === 'videos' ? 'active' : ''}`}
               onClick={() => onSelectMode?.('videos')}
             >
-              Gemini Video Remover
+              <span>Video Studio</span>
+              <span className="nav-tag-badge">1080p</span>
             </button>
           </nav>
         </div>
 
-        {/* Right CTA actions */}
+        {/* Right: GitHub Star, Theme Toggle */}
         <div className="header-right">
+          {/* GitHub Star Button */}
           <a
             href="https://github.com/harik90/Gemini_WatermarkHider"
             target="_blank"
@@ -200,20 +135,22 @@ export default function Header({ onSelectMode }) {
             aria-label="Star harik90/Gemini_WatermarkHider on GitHub"
             title="Star harik90/Gemini_WatermarkHider on GitHub"
           >
-            <svg className="github-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+            <svg className="github-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
             </svg>
-            <span className="star-icon">★</span>
-            <span className="stars-count">{formatStars(stars)}</span>
+            <span className="stars-count" suppressHydrationWarning>{formatStars(stars)}</span>
+            <span className="stars-arrow">↗</span>
           </a>
 
+          {/* Theme Toggle (Dark / Light) */}
           <button
             className="theme-toggle"
             onClick={toggle}
             data-active={theme === 'light' ? 'sun' : 'moon'}
             aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+            title={`Switch to ${theme === 'light' ? 'Dark' : 'Light'}`}
           >
-            <svg className="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg className="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="5" />
               <line x1="12" y1="2" x2="12" y2="6" />
               <line x1="12" y1="18" x2="12" y2="22" />
@@ -224,7 +161,7 @@ export default function Header({ onSelectMode }) {
               <line x1="4.93" y1="19.07" x2="7.76" y2="16.24" />
               <line x1="16.24" y1="7.76" x2="19.07" y2="4.93" />
             </svg>
-            <svg className="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg className="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
             </svg>
           </button>

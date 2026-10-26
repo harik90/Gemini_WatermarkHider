@@ -1,23 +1,33 @@
 import './globals.css';
 
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+
 export const metadata = {
-  title: 'Hide Gemini Watermark — Free Online Gemini Watermark Cleaner',
-  description: 'Free online Gemini watermark cleaner for images, logos, and star overlays. No upload, no sign-up — 100% local, private processing.',
-  keywords: 'gemini watermark remover, gemini video remover, remove gemini watermark, google ai watermark, reverse alpha blending, watermark cleaner',
+  title: 'Gemini Watermark Remover — Vercel Design Studio',
+  description: 'Precision client-side and pipeline watermark remover for Google Gemini & Veo videos and images.',
+  keywords: 'gemini watermark remover, veo video remover, remove gemini watermark, google ai watermark',
+  icons: {
+    icon: [
+      { url: `${basePath}/favicon.png`, sizes: '32x32', type: 'image/png' },
+      { url: `${basePath}/favicon.ico` },
+    ],
+    apple: [
+      { url: `${basePath}/apple-touch-icon.png` },
+    ],
+  },
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" data-theme="light" suppressHydrationWarning>
+    <html lang="en" data-theme="dark" suppressHydrationWarning>
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 0C12 6.627 6.627 12 0 12c6.627 0 12 5.373 12 12 0-6.627 5.373-12 12-12-6.627 0-12-5.373-12-12z' fill='%23F59E0B'/></svg>" />
+        <link rel="icon" type="image/png" sizes="32x32" href={`${basePath}/favicon.png`} />
+        <link rel="icon" type="image/x-icon" href={`${basePath}/favicon.ico`} />
+        <link rel="apple-touch-icon" href={`${basePath}/apple-touch-icon.png`} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400..800;1,9..40,400..800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-        <script dangerouslySetInnerHTML={{
-          __html: `(function(){try{var t=localStorage.getItem('clearmark-theme');if(t==='light'||t==='dark'){document.documentElement.setAttribute('data-theme',t)}else{document.documentElement.setAttribute('data-theme','light')}}catch(e){}})();`
-        }} />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
       </head>
       <body>
         {children}

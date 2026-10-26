@@ -13,7 +13,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "edit-video": "python edit_video.py",
+    "server": "python server.py"
   },
   "dependencies": {
     "jszip": "^3.10.1",

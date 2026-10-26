@@ -13,6 +13,7 @@ import ManualRegion from '@/components/ManualRegion';
 import ToastContainer from '@/components/ToastContainer';
 import Footer from '@/components/Footer';
 import PrivacyContent from '@/components/PrivacyContent';
+import EditVideoPanel from '@/components/EditVideoPanel';
 import Link from 'next/link';
 import { processImageFile, canvasToBlob, getOutputMimeType } from '@/lib/removal-engine';
 import { processVideo, formatETA } from '@/lib/video-processor';
@@ -46,6 +47,7 @@ export default function Home() {
 }
 
 function App() {
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
   const [files, setFiles] = useState([]);
   const [previewFile, setPreviewFile] = useState(null);
   const [modalTab, setModalTab] = useState('slider'); // 'slider' | 'adjust'
@@ -194,6 +196,14 @@ function App() {
     }
   }, [updateFile, addToast, exportQuality]);
 
+  const handleWrongTypeDropped = useCallback((type) => {
+    if (type === 'video') {
+      addToast('Video file detected. Please switch to "Batch Videos" tab to edit videos.', 'warning');
+    } else if (type === 'image') {
+      addToast('Image file detected. Please switch to "Images" tab to edit photos.', 'warning');
+    }
+  }, [addToast]);
+
   const handleFilesAdded = useCallback((newFiles) => {
     const items = newFiles.map((file) => ({
       id: generateId(),
@@ -323,6 +333,7 @@ function App() {
   return (
     <>
       <Header
+        currentMode={mode}
         onSelectMode={(newMode) => {
           setMode(newMode);
           if (hasFiles) {
@@ -332,61 +343,81 @@ function App() {
       />
 
       <main>
-        {!hasFiles ? (
-          <section className="hero">
-            <div className="container">
-              <h1 className="hero-title">Hide Gemini Watermark</h1>
-              <p className="hero-subtitle">
-                Free online Gemini watermark cleaner for images, logos, and star overlays.<br />
-                No upload, no sign-up — 100% local, private processing.
-              </p>
+        {mode === 'videos' ? (
+          <section className="studio-workspace" style={{ padding: '24px 0 36px' }}>
+            <div className="container" style={{ maxWidth: '1440px', padding: '0 20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+                <div className="vercel-segmented-control" role="tablist">
+                  <button
+                    type="button"
+                    className={`vercel-tab-btn ${mode === 'images' ? 'active' : ''}`}
+                    onClick={() => setMode('images')}
+                    role="tab"
+                    aria-selected={mode === 'images'}
+                  >
+                    <span>Images</span>
+                  </button>
 
-              {/* Mode switch tabs */}
-              <div className="mode-segmented-control" role="tablist">
-                <button
-                  type="button"
-                  className={`mode-tab ${mode === 'images' ? 'active' : ''}`}
-                  onClick={() => setMode('images')}
-                  role="tab"
-                  aria-selected={mode === 'images'}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                    <circle cx="8.5" cy="8.5" r="1.5"/>
-                    <polyline points="21 15 16 10 5 21"/>
-                  </svg>
-                  <span>Images</span>
-                </button>
-
-                <button
-                  type="button"
-                  className={`mode-tab ${mode === 'videos' ? 'active' : ''}`}
-                  onClick={() => setMode('videos')}
-                  role="tab"
-                  aria-selected={mode === 'videos'}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polygon points="23 7 16 12 23 17 23 7"/>
-                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-                  </svg>
-                  <span>Videos</span>
-                  <span className="mode-beta-badge">BETA</span>
-                </button>
+                  <button
+                    type="button"
+                    className={`vercel-tab-btn ${mode === 'videos' ? 'active' : ''}`}
+                    onClick={() => setMode('videos')}
+                    role="tab"
+                    aria-selected={mode === 'videos'}
+                  >
+                    <span>Video Studio</span>
+                    <span className="vercel-tab-tag">1080p CFR</span>
+                  </button>
+                </div>
               </div>
 
-              {/* Hero showcase with tilted cards and central drop zone */}
-              <div className="hero-showcase">
-                <div className="hero-tilted-card hero-tilted-left" aria-hidden="true">
-                  <img src={`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/samples/hero-left.jpg`} alt="" loading="eager" />
+              <EditVideoPanel onAddToast={addToast} />
+            </div>
+          </section>
+        ) : !hasFiles ? (
+          <section className="hero">
+            <div className="container">
+              <div className="vercel-hero-header">
+                <div className="vercel-pill-badge">
+                  <img src={`${basePath}/app-icon.png`} alt="" width={15} height={15} style={{ borderRadius: '3px', objectFit: 'contain' }} />
+                  <span className="vercel-badge-text">Dual-Star Calibrated Unblend</span>
+                  <span className="vercel-badge-arrow">→</span>
                 </div>
+                <h1 className="hero-title">Remove Watermarks from Gemini & Veo.</h1>
+                <p className="hero-subtitle">
+                  High-performance pixel-by-pixel unblending. Fast, private, and 100% in browser memory or local pipeline.
+                </p>
+              </div>
 
-                <div className="hero-tilted-card hero-tilted-right" aria-hidden="true">
-                  <img src={`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/samples/hero-right.jpg`} alt="" loading="eager" />
-                </div>
+              {/* Mode switch tabs */}
+              <div style={{ display: 'flex', justifyContent: 'center', margin: '20px 0 28px' }}>
+                <div className="vercel-segmented-control" role="tablist">
+                  <button
+                    type="button"
+                    className={`vercel-tab-btn ${mode === 'images' ? 'active' : ''}`}
+                    onClick={() => setMode('images')}
+                    role="tab"
+                    aria-selected={mode === 'images'}
+                  >
+                    <span>Images</span>
+                  </button>
 
-                <div className="hero-dropzone-wrapper">
-                  <DropZone onFilesAdded={handleFilesAdded} hasFiles={false} mode={mode} />
+                  <button
+                    type="button"
+                    className={`vercel-tab-btn ${mode === 'videos' ? 'active' : ''}`}
+                    onClick={() => setMode('videos')}
+                    role="tab"
+                    aria-selected={mode === 'videos'}
+                  >
+                    <span>Video Studio</span>
+                    <span className="vercel-tab-tag">1080p CFR</span>
+                  </button>
                 </div>
+              </div>
+
+              {/* Central drop zone */}
+              <div className="hero-dropzone-wrapper">
+                <DropZone onFilesAdded={handleFilesAdded} onWrongTypeDropped={handleWrongTypeDropped} hasFiles={false} mode={mode} />
               </div>
             </div>
           </section>
@@ -414,7 +445,7 @@ function App() {
               </div>
 
               <div style={{ display: 'none' }}>
-                <DropZone onFilesAdded={handleFilesAdded} hasFiles={true} mode={mode} />
+                <DropZone onFilesAdded={handleFilesAdded} onWrongTypeDropped={handleWrongTypeDropped} hasFiles={true} mode={mode} />
               </div>
 
               <FileQueue

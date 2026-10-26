@@ -184,6 +184,15 @@ export function getDefaultLogoSize(width, height) {
 }
 
 export function getDefaultPosition(width, height, logoSize) {
+  // For 16:9 or widescreen Gemini / Veo video aspect ratio
+  if (width / height >= 1.5) {
+    const cx = Math.round(width * 0.9062);
+    const cy = Math.round(height * 0.8333);
+    return {
+      x: cx - Math.round(logoSize / 2),
+      y: cy - Math.round(logoSize / 2),
+    };
+  }
   const margin = Math.max(8, Math.floor(logoSize / 6));
   return {
     x: width - logoSize - margin,

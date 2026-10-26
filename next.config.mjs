@@ -1,6 +1,7 @@
 const isGitHubActions = process.env.GITHUB_ACTIONS === 'true';
 const repoName = process.env.GITHUB_REPOSITORY ? process.env.GITHUB_REPOSITORY.split('/')[1] : 'Gemini_WatermarkHider';
-const basePath = isGitHubActions ? `/${repoName}` : '';
+const isUserSite = repoName.toLowerCase().endsWith('.github.io');
+const basePath = isGitHubActions ? (isUserSite ? '' : `/${repoName}`) : '';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

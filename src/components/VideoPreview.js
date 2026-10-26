@@ -13,6 +13,8 @@ export default function VideoPreview({ originalUrl, resultUrl }) {
         <video
           src={originalUrl}
           controls
+          loop
+          playsInline
           style={{ width: '100%', borderRadius: 'var(--radius-md)', background: 'var(--bg-inset)' }}
         />
       </div>
@@ -21,6 +23,8 @@ export default function VideoPreview({ originalUrl, resultUrl }) {
         <video
           src={resultUrl}
           controls
+          loop
+          playsInline
           style={{ width: '100%', borderRadius: 'var(--radius-md)', background: 'var(--bg-inset)' }}
         />
       </div>

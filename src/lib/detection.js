@@ -1,13 +1,13 @@
 /**
  * Detection engine — scans image/frame to locate the Gemini sparkle watermark.
- * Uses contrast-aware shape matching and Zero-mean Normalized Cross-Correlation (ZNCC)
- * with pre-calibrated astroid alpha maps to ensure bright skies and clouds are never
+ * Uses High-Pass Difference-of-Means filtering and Zero-mean Normalized Cross-Correlation (ZNCC)
+ * with pre-calibrated astroid alpha maps to ensure bright skies, clouds, and sharp edges are never
  * mistaken for watermarks.
  */
 
 import { getDefaultLogoSize, getDefaultPosition, getAlphaMap } from './alpha-maps.js';
 
-const CONFIDENCE_THRESHOLD = 0.40;
+const CONFIDENCE_THRESHOLD = 0.35;
 const templateStatsCache = new Map();
 
 /**
@@ -20,6 +20,7 @@ function getTemplateStats(size, alphaMap) {
 
   const cx = Math.floor(size / 2);
   const cy = Math.floor(size / 2);
+  const r = (size / 2) * 0.95;
 
   const samples = [];
   let sumAlpha = 0;
@@ -32,9 +33,12 @@ function getTemplateStats(size, alphaMap) {
       samples.push({ x, y, a });
       sumAlpha += a;
 
-      if (a > 0.35) {
-        fgPoints.push({ x, y });
-      } else if (a < 0.05) {
+      const dx = Math.abs(x - cx) / r;
+      const dy = Math.abs(y - cy) / r;
+      const d = Math.pow(dx, 0.67) + Math.pow(dy, 0.67);
+      if (d <= 0.75) {
+        fgPoints.push({ x, y, w: Math.pow(1 - d, 0.35) });
+      } else if (d > 1.15 && d < 1.7) {
         bgPoints.push({ x, y });
       }
     }
@@ -66,17 +70,47 @@ function getTemplateStats(size, alphaMap) {
 }
 
 /**
+ * Computes a local high-pass (difference of 5x5 box filter) luma buffer.
+ * Eliminates background color casts, bright skies, and slow gradient step edges.
+ */
+function computeHighPassLuma(imageData, width, height) {
+  const data = imageData.data;
+  const luma = new Float32Array(width * height);
+  for (let i = 0; i < width * height; i++) {
+    luma[i] = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
+  }
+
+  const hp = new Float32Array(width * height);
+  const pad = 2;
+  for (let y = pad; y < height - pad; y++) {
+    const row = y * width;
+    for (let x = pad; x < width - pad; x++) {
+      let sum = 0;
+      for (let dy = -pad; dy <= pad; dy++) {
+        for (let dx = -pad; dx <= pad; dx++) {
+          sum += luma[(y + dy) * width + (x + dx)];
+        }
+      }
+      hp[row + x] = luma[row + x] - sum / 25;
+    }
+  }
+  return hp;
+}
+
+/**
  * Detect watermark position and size in an image.
- * Scans candidate corner regions (bottom-right primary) to find the exact peak.
+ * Scans candidate regions to find the exact sparkle peak.
  */
 export function detectWatermark(imageData, width, height, options = {}) {
   const preferredSize = options.logoSize || getDefaultLogoSize(width, height);
-  const candidateSizes = [...new Set([preferredSize, 48, 64, 36, 96, 32])].filter(
-    (s) => s < Math.min(width, height) * 0.4
+  const candidateSizes = [...new Set([preferredSize, 48, 64, 36, 96, 32, 24])].filter(
+    (s) => s <= Math.min(width, height) * 0.8
   );
 
+  const hpLuma = computeHighPassLuma(imageData, width, height);
+
   // Search primary corner: bottom-right
-  const brResult = searchCorner(imageData, width, height, 'bottom-right', candidateSizes);
+  const brResult = searchCorner(imageData, hpLuma, width, height, 'bottom-right', candidateSizes);
   if (brResult.confidence >= CONFIDENCE_THRESHOLD) {
     return {
       detected: true,
@@ -89,8 +123,8 @@ export function detectWatermark(imageData, width, height, options = {}) {
     };
   }
 
-  // Fallback: check bottom-left and top-right if bottom-right confidence is low
-  const blResult = searchCorner(imageData, width, height, 'bottom-left', candidateSizes);
+  // Fallback: check bottom-left
+  const blResult = searchCorner(imageData, hpLuma, width, height, 'bottom-left', candidateSizes);
   if (blResult.confidence > brResult.confidence && blResult.confidence >= CONFIDENCE_THRESHOLD) {
     return {
       detected: true,
@@ -103,15 +137,16 @@ export function detectWatermark(imageData, width, height, options = {}) {
     };
   }
 
-  // If still not confident, return best candidate from bottom-right (or default position)
+  // Fallback to highest confidence candidate if > 0.22, else standard position
   const defaultPos = getDefaultPosition(width, height, preferredSize);
-  const bestX = brResult.confidence > 0.35 ? brResult.x : defaultPos.x;
-  const bestY = brResult.confidence > 0.35 ? brResult.y : defaultPos.y;
-  const bestSize = brResult.confidence > 0.35 ? brResult.logoSize : preferredSize;
+  const bestResult = brResult.confidence >= blResult.confidence ? brResult : blResult;
+  const bestX = bestResult.confidence >= 0.22 ? bestResult.x : defaultPos.x;
+  const bestY = bestResult.confidence >= 0.22 ? bestResult.y : defaultPos.y;
+  const bestSize = bestResult.confidence >= 0.22 ? bestResult.logoSize : preferredSize;
 
   return {
-    detected: brResult.confidence >= CONFIDENCE_THRESHOLD,
-    confidence: brResult.confidence,
+    detected: bestResult.confidence >= CONFIDENCE_THRESHOLD,
+    confidence: bestResult.confidence,
     x: bestX,
     y: bestY,
     logoSize: bestSize,
@@ -121,42 +156,45 @@ export function detectWatermark(imageData, width, height, options = {}) {
 }
 
 /**
- * Searches a corner quadrant with a 2-pass coarse-to-fine search.
+ * Searches a quadrant with high-pass zero-mean correlation and coarse-to-fine refinement.
  */
-function searchCorner(imageData, imgW, imgH, corner, candidateSizes) {
+function searchCorner(imageData, hpLuma, imgW, imgH, corner, candidateSizes) {
   let best = { confidence: 0, x: 0, y: 0, logoSize: candidateSizes[0] };
+
+  // For small/cropped inputs (< 450px), search across the full image to avoid clipping
+  const isSmall = imgW < 450 || imgH < 450;
+  const searchMarginX = isSmall ? imgW : Math.max(380, Math.floor(imgW * 0.55));
+  const searchMarginY = isSmall ? imgH : Math.max(380, Math.floor(imgH * 0.55));
 
   for (const size of candidateSizes) {
     const alphaMap = getAlphaMap(size);
     let minX, maxX, minY, maxY;
 
-    const searchMargin = Math.min(320, Math.floor(Math.min(imgW, imgH) * 0.45));
-
     if (corner === 'bottom-right') {
-      minX = Math.max(0, imgW - searchMargin);
-      maxX = Math.max(0, imgW - size - 4);
-      minY = Math.max(0, imgH - searchMargin);
-      maxY = Math.max(0, imgH - size - 4);
+      minX = Math.max(0, imgW - searchMarginX);
+      maxX = Math.max(0, imgW - size);
+      minY = Math.max(0, imgH - searchMarginY);
+      maxY = Math.max(0, imgH - size);
     } else if (corner === 'bottom-left') {
-      minX = 4;
-      maxX = Math.min(imgW - size, searchMargin - size);
-      minY = Math.max(0, imgH - searchMargin);
-      maxY = Math.max(0, imgH - size - 4);
+      minX = 0;
+      maxX = Math.min(imgW - size, searchMarginX - size);
+      minY = Math.max(0, imgH - searchMarginY);
+      maxY = Math.max(0, imgH - size);
     } else {
       continue;
     }
 
-    if (maxX <= minX || maxY <= minY) continue;
+    if (maxX < minX || maxY < minY) continue;
 
-    // Coarse pass (stride = 3 for fine precision)
+    // Coarse pass (stride = 2 for high speed and precision)
     let coarseBestScore = -Infinity;
     let coarseBestX = minX;
     let coarseBestY = minY;
 
-    const coarseStep = 3;
+    const coarseStep = 2;
     for (let y = minY; y <= maxY; y += coarseStep) {
       for (let x = minX; x <= maxX; x += coarseStep) {
-        const score = computeCorrelation(imageData, imgW, imgH, x, y, size, alphaMap);
+        const score = computeCorrelation(imageData, hpLuma, imgW, imgH, x, y, size, alphaMap);
         if (score > coarseBestScore) {
           coarseBestScore = score;
           coarseBestX = x;
@@ -165,7 +203,7 @@ function searchCorner(imageData, imgW, imgH, corner, candidateSizes) {
       }
     }
 
-    if (coarseBestScore === -Infinity) continue;
+    if (coarseBestScore === -Infinity || coarseBestScore <= 0) continue;
 
     // Fine pass (stride = 1) around coarse best
     const fineRadius = coarseStep;
@@ -180,7 +218,7 @@ function searchCorner(imageData, imgW, imgH, corner, candidateSizes) {
 
     for (let y = fMinY; y <= fMaxY; y++) {
       for (let x = fMinX; x <= fMaxX; x++) {
-        const score = computeCorrelation(imageData, imgW, imgH, x, y, size, alphaMap);
+        const score = computeCorrelation(imageData, hpLuma, imgW, imgH, x, y, size, alphaMap);
         if (score > fineBestScore) {
           fineBestScore = score;
           fineBestX = x;
@@ -205,38 +243,62 @@ function searchCorner(imageData, imgW, imgH, corner, candidateSizes) {
 }
 
 /**
- * Shape cross-correlation and contrast evaluation.
- * Returns -Infinity if candidate is flat sky, cloud gradient, or darker than background.
+ * Zero-mean Cross-Correlation of high-pass image with astroid shape.
  */
-function computeCorrelation(imageData, imgW, imgH, rx, ry, size, alphaMap) {
-  const data = imageData.data;
+function computeCorrelation(imageData, hpLuma, imgW, imgH, rx, ry, size, alphaMap) {
   const stats = getTemplateStats(size, alphaMap);
-  const { cx, cy, fgPoints, bgPoints, samples, N, meanAlpha, normAlpha } = stats;
+  const { samples, N, meanAlpha } = stats;
 
   if (rx < 0 || rx + size > imgW || ry < 0 || ry + size > imgH) {
     return -Infinity;
   }
 
-  // Quick rejection 1: Sparkle center MUST be brighter than the 4 corners of candidate box
-  const centerIdx = ((ry + cy) * imgW + (rx + cx)) * 4;
-  const centerLuma = 0.299 * data[centerIdx] + 0.587 * data[centerIdx + 1] + 0.114 * data[centerIdx + 2];
-
-  const c1Idx = (ry * imgW + rx) * 4;
-  const c2Idx = (ry * imgW + (rx + size - 1)) * 4;
-  const c3Idx = ((ry + size - 1) * imgW + rx) * 4;
-  const c4Idx = ((ry + size - 1) * imgW + (rx + size - 1)) * 4;
-  const cornerAvg = (
-    (0.299 * data[c1Idx] + 0.587 * data[c1Idx + 1] + 0.114 * data[c1Idx + 2]) +
-    (0.299 * data[c2Idx] + 0.587 * data[c2Idx + 1] + 0.114 * data[c2Idx + 2]) +
-    (0.299 * data[c3Idx] + 0.587 * data[c3Idx + 1] + 0.114 * data[c3Idx + 2]) +
-    (0.299 * data[c4Idx] + 0.587 * data[c4Idx + 1] + 0.114 * data[c4Idx + 2])
-  ) * 0.25;
-
-  if (centerLuma < cornerAvg + 0.5) {
-    return -Infinity;
+  let dot = 0;
+  for (let i = 0; i < N; i++) {
+    const s = samples[i];
+    const hpVal = hpLuma[(ry + s.y) * imgW + (rx + s.x)];
+    dot += hpVal * (s.a - meanAlpha);
   }
 
-  // Quick rejection 2: Contrast between high-alpha core and border background
+  return dot;
+}
+
+/**
+ * Detailed confidence verification at candidate peak combining astroid shape and internal contrast.
+ */
+function evaluateRegionConfidence(imageData, imgW, imgH, rx, ry, size, alphaMap) {
+  const data = imageData.data;
+  const stats = getTemplateStats(size, alphaMap);
+  const { fgPoints, bgPoints, samples, N, meanAlpha, normAlpha } = stats;
+
+  if (rx < 0 || rx + size > imgW || ry < 0 || ry + size > imgH) {
+    return 0;
+  }
+
+  let sumL = 0;
+  let sumL2 = 0;
+  let sumProd = 0;
+
+  for (let i = 0; i < N; i++) {
+    const s = samples[i];
+    const idx = ((ry + s.y) * imgW + (rx + s.x)) * 4;
+    const luma = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+
+    sumL += luma;
+    sumL2 += luma * luma;
+    sumProd += luma * s.a;
+  }
+
+  const meanL = sumL / N;
+  const varL = sumL2 - N * meanL * meanL;
+  if (varL < 1.0) return 0;
+
+  const cov = sumProd - N * meanL * meanAlpha;
+  if (cov <= 0) return 0;
+
+  const zncc = cov / (Math.sqrt(varL) * normAlpha);
+  if (zncc <= 0) return 0;
+
   let fgSum = 0;
   for (let i = 0; i < fgPoints.length; i++) {
     const pt = fgPoints[i];
@@ -251,117 +313,13 @@ function computeCorrelation(imageData, imgW, imgH, rx, ry, size, alphaMap) {
     const idx = ((ry + pt.y) * imgW + (rx + pt.x)) * 4;
     bgSum += 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
   }
-  const bgAvg = bgPoints.length > 0 ? bgSum / bgPoints.length : cornerAvg;
-
+  const bgAvg = bgPoints.length > 0 ? bgSum / bgPoints.length : 0;
   const contrast = fgAvg - bgAvg;
-  if (contrast <= 0.8) {
-    return -Infinity;
-  }
 
-  // Zero-mean Normalized Cross-Correlation (ZNCC) with star shape
-  let sumL = 0;
-  let sumL2 = 0;
-  let sumProd = 0;
+  if (contrast < 0.15) return 0;
 
-  for (let i = 0; i < N; i++) {
-    const s = samples[i];
-    const idx = ((ry + s.y) * imgW + (rx + s.x)) * 4;
-    const luma = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-
-    sumL += luma;
-    sumL2 += luma * luma;
-    sumProd += luma * s.a;
-  }
-
-  const meanL = sumL / N;
-  const varL = sumL2 - N * meanL * meanL;
-  if (varL < 2.0) {
-    return -Infinity;
-  }
-
-  const cov = sumProd - N * meanL * meanAlpha;
-  if (cov <= 0) {
-    return -Infinity;
-  }
-
-  const zncc = cov / (Math.sqrt(varL) * normAlpha);
-  if (zncc <= 0.12) {
-    return -Infinity;
-  }
-
-  return zncc * Math.log(1 + contrast);
-}
-
-/**
- * Detailed confidence verification at candidate peak.
- */
-function evaluateRegionConfidence(imageData, imgW, imgH, rx, ry, size, alphaMap) {
-  const data = imageData.data;
-  const stats = getTemplateStats(size, alphaMap);
-  const { cx, cy, samples, N, meanAlpha, normAlpha } = stats;
-
-  if (rx < 0 || rx + size > imgW || ry < 0 || ry + size > imgH) {
-    return 0;
-  }
-
-  // 1. Compute ZNCC
-  let sumL = 0;
-  let sumL2 = 0;
-  let sumProd = 0;
-
-  for (let i = 0; i < N; i++) {
-    const s = samples[i];
-    const idx = ((ry + s.y) * imgW + (rx + s.x)) * 4;
-    const luma = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-
-    sumL += luma;
-    sumL2 += luma * luma;
-    sumProd += luma * s.a;
-  }
-
-  const meanL = sumL / N;
-  const varL = sumL2 - N * meanL * meanL;
-  if (varL < 2.0) return 0;
-
-  const cov = sumProd - N * meanL * meanAlpha;
-  if (cov <= 0) return 0;
-
-  const zncc = cov / (Math.sqrt(varL) * normAlpha);
-  if (zncc <= 0) return 0;
-
-  // 2. Compute local background contrast outside the box
-  let bgLuma = 0;
-  let bgCount = 0;
-  const pad = Math.max(6, Math.floor(size / 6));
-
-  for (let dy = -pad; dy < size + pad; dy += 2) {
-    const py = ry + dy;
-    if (py < 0 || py >= imgH) continue;
-    const rowOffset = py * imgW;
-
-    for (let dx = -pad; dx < size + pad; dx += 2) {
-      if (dy >= 0 && dy < size && dx >= 0 && dx < size) continue;
-      const px = rx + dx;
-      if (px < 0 || px >= imgW) continue;
-
-      const idx = (rowOffset + px) * 4;
-      bgLuma += 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-      bgCount++;
-    }
-  }
-
-  const avgBg = bgCount > 0 ? bgLuma / bgCount : 128;
-
-  // Center watermark brightness
-  const centerIdx = ((ry + cy) * imgW + (rx + cx)) * 4;
-  const centerLuma = 0.299 * data[centerIdx] + 0.587 * data[centerIdx + 1] + 0.114 * data[centerIdx + 2];
-  const contrast = centerLuma - avgBg;
-
-  if (contrast < 0.5) return 0;
-
-  // Confidence combines shape correlation (ZNCC) and normalized contrast
-  const contrastScore = Math.min(1.0, Math.max(0, contrast / 35.0));
-  const confidence = zncc * 0.65 + contrastScore * 0.35;
+  const contrastScore = Math.min(1.0, Math.max(0, contrast / 25.0));
+  const confidence = zncc * 0.70 + contrastScore * 0.30;
 
   return Math.min(1.0, Math.max(0, Math.round(confidence * 100) / 100));
 }
@@ -372,4 +330,3 @@ export function detectWatermarkFromCanvas(canvas) {
   const imageData = ctx.getImageData(0, 0, width, height);
   return detectWatermark(imageData, width, height);
 }
-

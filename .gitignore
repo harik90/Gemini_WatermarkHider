@@ -37,3 +37,19 @@ Thumbs.db
 next-env.d.ts
 .vscode/
 .idea/
+
+# Python & Local Pipelines
+__pycache__/
+*.py[cod]
+*$py.class
+*.npy
+input_scenes/
+output/
+test_scenes_backup/
+
+# Root debug artifacts & scratch calibration
+/*.png
+
+# Ensure essential assets are preserved
+!public/*.png
+!public/*.ico

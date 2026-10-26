@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback, useSyncExternalStore } from 'react';
 
-const ThemeContext = createContext({ theme: 'light', toggle: () => {} });
+const ThemeContext = createContext({ theme: 'dark', toggle: () => {} });
 const emptySubscribe = () => () => {};
 
 export function ThemeProvider({ children }) {
@@ -13,7 +13,7 @@ export function ThemeProvider({ children }) {
         return stored;
       }
     }
-    return 'light';
+    return 'dark';
   });
 
   const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);

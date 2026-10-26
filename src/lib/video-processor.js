@@ -125,7 +125,7 @@ export function createVideoWatermarkEngine(patchW, patchH, relX, relY, logoSize,
       const d1 = Math.pow(dx1 / r1, 0.68) + Math.pow(dy1 / r1, 0.68);
       let a1 = 0;
       if (d1 <= 1.0) {
-        a1 = Math.pow(1.0 - d1, 0.4) * 0.84;
+        a1 = Math.pow(1.0 - d1, 0.32) * 0.47;
       }
 
       // Secondary Star (Veo)
@@ -133,9 +133,9 @@ export function createVideoWatermarkEngine(patchW, patchH, relX, relY, logoSize,
       if (r2 > 0) {
         const dx2 = Math.abs(x - cx2);
         const dy2 = Math.abs(y - cy2);
-        const d2 = Math.pow(dx2 / r2, 0.68) + Math.pow(dy2 / r2, 0.68);
+        const d2 = Math.pow(dx2 / r2, 0.67) + Math.pow(dy2 / r2, 0.67);
         if (d2 <= 1.0) {
-          a2 = Math.pow(1.0 - d2, 0.4) * 0.76;
+          a2 = Math.pow(1.0 - d2, 0.32) * 0.42;
         }
       }
 
@@ -201,7 +201,7 @@ export function createVideoWatermarkEngine(patchW, patchH, relX, relY, logoSize,
       lutWl[idx] = wl;
       lutWr[idx] = wr;
 
-      lutAlpha255[idx] = alpha * 255.0;
+      lutAlpha255[idx] = alpha * 195.0;
       lutInvOneMinusA[idx] = 1.0 / Math.max(0.05, 1.0 - alpha);
       lutInpaintWeight[idx] = inpaintW;
       lutFeather[idx] = feather;
@@ -263,9 +263,9 @@ export function createVideoWatermarkEngine(patchW, patchH, relX, relY, logoSize,
           rOrig < 0 || rOrig > 255 ||
           gOrig < 0 || gOrig > 255 ||
           bOrig < 0 || bOrig > 255 ||
-          Math.abs(rOrig - rInp) > 28 ||
-          Math.abs(gOrig - gInp) > 28 ||
-          Math.abs(bOrig - bInp) > 28
+          Math.abs(rOrig - rInp) > 65 ||
+          Math.abs(gOrig - gInp) > 65 ||
+          Math.abs(bOrig - bInp) > 65
         );
 
         if (needsFallback) {
